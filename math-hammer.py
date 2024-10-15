@@ -102,27 +102,29 @@ def modifier_reroll_successes(sequence):
             state.scratch['break_mod_loop'] = True
         return state
     return functor
-def modifier_reroll_variable_damage(sides):
+def modifier_reroll_variable_stat(sequence, sides):
     expected = np.sum(list(range(1,sides+1))) / sides
     norm_factor = sides / 6
     def functor(state):
-        if np.ceil(state.roll['damage'].value * norm_factor) < expected and state.roll['damage'].roll_count < 2:
-            source = state.determine_pool_source('damage')
-            state.pool[source].append(state.roll['damage'])
+        if np.ceil(state.roll[sequence].value * norm_factor) < expected and state.roll[sequence].roll_count < 2:
+            source = state.determine_pool_source(sequence)
+            state.pool[source].append(state.roll[sequence])
             state.scratch['break_mod_loop'] = True
         return state
     return functor
 
 # =========================================================================== #
 class Dice():
-    def __init__(self, sides=6):
+    def __init__(self, sides=6, fixed=None):
         self.roll_count = 0
         self.sides = sides
-        self.numerator = None
+        self.fixed_value = fixed
+        self.value = None if self.fixed_value is None else self.fixed_value
     
     def roll(self):
         self.roll_count += 1
-        self.value = random.randint(1,self.sides)
+        if self.fixed_value is None:
+            self.value = random.randint(1,self.sides)
         return self
 
 def determine_wound_roll(strength, toughness):
@@ -146,8 +148,12 @@ def determine_save(save, invuln, armourpen):
 class AttackSequenceState():
     def __init__(self):
         self.scratch = {} # for, you know, whatever
-        self.pool = {'attacks': [], 'hit': [], 'wound': [], 'save': [], 'damage': [], 'fnp': []}
-        self.roll = {'hit': None, 'wound': None, 'save': None, 'damage': None, 'fnp': None}
+        # self.pool = {'attacks': [], 'hit': [], 'wound': [], 'save': [], 'damage': [], 'fnp': []} # this works
+        # self.roll = {'hit': None, 'wound': None, 'save': None, 'damage': None, 'fnp': None} # this works
+        # Pools are lists of Dice.  These dice move to the next pool when success is marked
+        self.pool = {'preamble': [], 'attacks': [], 'hit': [], 'wound': [], 'save': [], 'damage': [], 'fnp': []}
+        # Roll is the current dice being rolled.
+        self.roll = {'attacks': None, 'hit': None, 'wound': None, 'save': None, 'damage': None, 'fnp': None}
         # attacker and defender fill in these when asked
         self.char = {
             'attacks': None, 
@@ -207,8 +213,10 @@ class AttackSequenceState():
         return determine_save(self.threshold['sv'], self.threshold['invuln'], self.threshold['armourpen'])
 
     def determine_pool_source(self, sequence):
-        # self.pool = {'attacks': 0, 'hit': 0, 'wound': 0, 'save': 0, 'damage': 0, 'fnp': 0}
-        # self.roll = {'hit': None, 'wound': None, 'save': None, 'damage': None, 'fnp': None}
+        # self.pool = {'preamble': [], 'attacks': [], 'hit': [], 'wound': [], 'save': [], 'damage': [], 'fnp': []}
+        # self.roll = {'attacks': None, 'hit': None, 'wound': None, 'save': None, 'damage': None, 'fnp': None}
+        if sequence == 'attacks':
+            return 'preamble'
         if sequence == 'hit':
             return 'attacks'
         if sequence == 'wound':
@@ -233,9 +241,49 @@ def create_standard_attack_modifier_sequence():
         modifier_value = np.clip(modifier_value, a_min=-1, a_max=1)
         return unmodified + modifier_value
 
-    def resolve_attack_pool(state):
+    def intialize_handler(state):
         # Pools are lists of Dice.  These dice move to the next pool when success is marked
-        state.pool['attacks'] = [Dice() for _ in range(0, state.char['attacks'])]
+
+        # all that's needed is to initalize the number of attacks, which may or maynot be determined by a roll of the dice
+        # this is a bit of a hack, but for static attack characteristics, we'll create a "fixed" dice.  This plugs into the existing framework more nicely (debatably).
+
+        # state.char['attacks'] can only be 1 of 3 possibilities:
+        #   int
+        #   Dice
+        #   [Dice,] 
+        # check if state.char['attacks'] is list, if so, add it directly
+        # check if state.char is a Dice.  if so, add it to the list
+        # if it is an int, create a dice with the value fixed to that int
+        try_again = False
+        try: # it's a [Dice,]
+            for item in state.char['attacks']:
+                state.pool['preamble'].append(item)
+        except Exception as e:
+            try_again = True
+        
+        if try_again is True:
+            try_again = False
+            try: # it's a Dice
+                if state.char['attacks'].sides > 0: # i.e. is rollable
+                    state.pool['preamble'].append(state.char['attacks'])
+            except Exception as e:
+                try_again = True
+        
+        if try_again is True:
+            # okay, it must be an int
+            # if not, another handler can take exception
+            state.pool['preamble'].append(Dice(sides=6, fixed=state.char['attacks']))
+        return state
+    def resolve_attack_pool(state):
+        # the preamble determined how many dice, all we need to do is pass the value straight in
+        attacks_to_add = 0
+        try:
+            # attacks might be callable, this will trigger use of the roll
+            attacks_to_add = state.char['attacks'](state.roll['attacks'].value)
+        except Exception as e:
+            attacks_to_add += state.char['attacks']
+        for _ in range(0, attacks_to_add):
+            state.pool['attacks'].append(Dice())
         return state
     def resolve_hit_pool(state):
         CR = state.char['criticalhit']
@@ -296,7 +344,8 @@ def create_standard_attack_modifier_sequence():
 
     # the keys are, basically, the steps in the state machine.
     # the values are the last action to take
-    post = {'attacks': [resolve_attack_pool], 
+    post = {'preamble': [intialize_handler],
+            'attacks': [resolve_attack_pool], 
             'hit': [resolve_hit_pool],
             'strength': [assign_strength],
             'toughness': [assign_toughness],
@@ -329,7 +378,8 @@ class AStat():
         self.points = PTS
 
         # we only interact with the .char field
-        self.modifiers = {'attacks': [assign_char('attacks', self.attacks), assign_char('damage', self.damage), assign_char('strength', self.strength), assign_char('armourpen', self.armourpen), assign_char('skill', self.skill)],
+        self.modifiers = {'preamble': [assign_char('attacks', self.attacks), assign_char('damage', self.damage), assign_char('strength', self.strength), assign_char('armourpen', self.armourpen), assign_char('skill', self.skill)],
+                          'attacks': [identity()],
                           'hit': [identity()], 
                           'strength': [identity()],
                           'toughness': [identity()],
@@ -359,7 +409,8 @@ class DStat():
         self.the_d6 = Dice(sides=6)
 
         # we only interact with the .char field
-        self.modifiers = {'attacks': [assign_char('toughness', self.toughness), assign_char('invuln', self.invuln), assign_char('sv', self.save), assign_char('fnp', self.feelnopain)],
+        self.modifiers = {'preamble': [assign_char('toughness', self.toughness), assign_char('invuln', self.invuln), assign_char('sv', self.save), assign_char('fnp', self.feelnopain)],
+                          'attacks': [identity()], 
                           'hit': [identity()], 
                           'strength': [identity()],
                           'toughness': [identity()],
@@ -424,8 +475,8 @@ RerollWoundsOne = Modifier(sequence='wound', functor=modifier_reroll_ones('wound
 TwinLinked = RerollWounds
 RerollHits = Modifier(sequence='hit', functor=modifier_reroll_fails('hit'))
 RerollHitsOne = Modifier(sequence='hit', functor=modifier_reroll_ones('hit'))
-Reroll_D6_Damage = Modifier(sequence='damage', functor=modifier_reroll_variable_damage(sides=6))
-Reroll_D3_Damage = Modifier(sequence='damage', functor=modifier_reroll_variable_damage(sides=3))
+Reroll_D6_Damage = Modifier(sequence='damage', functor=modifier_reroll_variable_stat(sequence='damage', sides=6))
+Reroll_D3_Damage = Modifier(sequence='damage', functor=modifier_reroll_variable_stat(sequence='damage', sides=3))
 PlusOneToWound = Modifier(sequence='wound', functor=modifier_roll_add_one('wound'))
 PlusOneToHit = Modifier(sequence='hit', functor=modifier_roll_add_one('hit'))
 LethalHits = Modifier(sequence='hit', functor=modifier_lethal_hits())
@@ -511,6 +562,7 @@ def run_test():
     STRENGTH = 4
     AP = 0
     DAMAGE = 1
+    VARDAMAGE = d3_damage_plus(0)
 
     TOUGHNESS = 5
     SAVE = 4
@@ -520,6 +572,8 @@ def run_test():
 
     attackers = [
         ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) , 0.0833 ),
+        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=VARDAMAGE) , 2 * 0.0833 ),
+        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=VARDAMAGE) * Reroll_D3_Damage, 2.333333 * 0.0833 ),
         ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * LethalHits , 0.1389 ),
         ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * SustainedHits_1 , 0.1111 ),
         ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * RerollHits , 0.125 ),
@@ -532,10 +586,10 @@ def run_test():
     ]
 
     for test_att, expected in attackers:
-        print(f"actual, expected: {mean_loop(attacker=test_att, defender=test_def, count=10000)}, {expected}")
+        print(f"actual, expected: {mean_loop(attacker=test_att, defender=test_def, count=10000):0.4f}, {expected:0.4f}")
 
 if __name__ == "__main__":
-    if False:
+    if True:
         run_test()
     else:
         # The targets
@@ -555,6 +609,13 @@ if __name__ == "__main__":
         TemplarVow = LethalHits
         # TemplarVow = SustainedHits_1
 
+
+        # Their boyz
+        # ==================================================================================== #
+        #       The dreaded Wraithguard
+        # ==================================================================================== #
+        elf_wraithguard_cannon = AStat(PTS=190/5, A=1, BS_WS=4, S=14, AP=-4, D=d6_damage_plus(0)) * DevestatingWounds
+        elf_wraithguard_dscythe = AStat(PTS=190/5, A=1, BS_WS=4, S=10, AP=-4, D=1)
 
         # Our boyz
         # ==================================================================================== #
