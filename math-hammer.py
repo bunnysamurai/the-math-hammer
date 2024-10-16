@@ -504,6 +504,7 @@ StrengthPlusOne = Modifier(sequence='attacks', functor=modifier_characteristic_a
 AP_PlusOne = Modifier(sequence='attacks', functor=modifier_characteristic_subtract_one('armourpen'))
 AttacksPlusOne = Modifier(sequence='attacks', functor=modifier_characteristic_add_one('attacks'))
 DamagePlusOne = Modifier(sequence='attacks', functor=modifier_characteristic_add_one('damage'))
+CriticalHit_5up = Modifier(sequence='attacks', functor=modifier_characteristic_subtract_one('criticalhit'))
 
 # =================================================================================== #
 def mean_loop(attacker, defender, count):
@@ -578,6 +579,7 @@ def run_test():
         ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=VARDAMAGE) * Reroll_D3_Damage, 2.333333 * 0.0833 ),
         ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * LethalHits , 0.1389 ),
         ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * SustainedHits_1 , 0.1111 ),
+        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * SustainedHits_1 * CriticalHit_5up, 0.1389 ),
         ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * RerollHits , 0.125 ),
         ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * RerollHitsOne , 0.0972 ),
         ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * RerollWounds , 0.1389 ),
@@ -625,6 +627,7 @@ if __name__ == "__main__":
         # ==================================================================================== #
         the_emperors_champion_strike = AStat(PTS=75, A=6, BS_WS=2, S=8, AP=-3, D=3)
         chaplain_gregor_ironmaw = AStat(PTS=60+15, A=5, BS_WS=2, S=6, AP=-1, D=2) * PlusOneToWound * StrengthPlusOne * AP_PlusOne * AttacksPlusOne
+        apothecary_bio_gun = AStat(PTS=55+30, A=1, BS_WS=3, S=5, AP=-1, D=2)
 
         characters = {
             'the_emperors_champion_strike': [ the_emperors_champion_strike * TemplarVow ],
@@ -636,16 +639,34 @@ if __name__ == "__main__":
         # ==================================================================================== #
         eradicator_firing_at_a_tank = AStat(PTS=95/3, A=1, BS_WS=3, S=9, AP=-4, D=Dice())  * RerollHits  * RerollWounds * Reroll_D6_Damage
         eradicator_firing_at_a_tank_in_melta_range = AStat(PTS=95/3, A=1, BS_WS=3, S=9, AP=-4, D=Dice(bias=2))  * RerollHits  * RerollWounds * Reroll_D6_Damage
+        eradicator_multi_firing_at_a_tank = AStat(PTS=95/3, A=2, BS_WS=4, S=9, AP=-4, D=Dice())  * RerollHits  * RerollWounds * Reroll_D6_Damage
+        eradicator_multi_firing_at_a_tank_in_melta_range = AStat(PTS=95/3, A=2, BS_WS=4, S=9, AP=-4, D=Dice(bias=2))  * RerollHits  * RerollWounds * Reroll_D6_Damage
         devastator_lascannon_not_moved = AStat(PTS=120/5, A=1, BS_WS=4, S=12, AP=-3, D=Dice(bias=1)) * PlusOneToHit
+
+        devastators = [copy.deepcopy(devastator_lascannon_not_moved) for _ in range(0,4)]
 
         eradicators = [copy.deepcopy(eradicator_firing_at_a_tank) for _ in range(0,3)]
         eradicators_melta = [copy.deepcopy(eradicator_firing_at_a_tank_in_melta_range) for _ in range(0,3)]
-        devastators = [copy.deepcopy(devastator_lascannon_not_moved) for _ in range(0,4)]
+        eradicators_if_i_built_them_different = [copy.deepcopy(eradicator_firing_at_a_tank) for _ in range(0,2)] + [copy.deepcopy(eradicator_multi_firing_at_a_tank) for _ in range(0,1)]
+        eradicators_melta_if_i_built_them_different = [copy.deepcopy(eradicator_firing_at_a_tank_in_melta_range) for _ in range(0,2)] + [copy.deepcopy(eradicator_multi_firing_at_a_tank_in_melta_range) for _ in range(0,1)]
+
+        full_squad_eradicators = [copy.deepcopy(eradicator_firing_at_a_tank) for _ in range(0,4)] + [copy.deepcopy(eradicator_multi_firing_at_a_tank) for _ in range(0,2)]
+        full_squad_eradicators_melta = [copy.deepcopy(eradicator_firing_at_a_tank_in_melta_range) for _ in range(0,4)] + [copy.deepcopy(eradicator_multi_firing_at_a_tank_in_melta_range) for _ in range(0,2)]
+
+        # Eradicators + Apothecary Biologis with Fire Discipline = A lot of hurt
+        full_eradicators_firedis_stack = mod_squad(mod_squad(mod_squad(add_unit(full_squad_eradicators, apothecary_bio_gun), LethalHits), SustainedHits_1), CriticalHit_5up)
+        full_eradicators_melta_firedis_stack = mod_squad(mod_squad(mod_squad(add_unit(full_squad_eradicators_melta, apothecary_bio_gun), LethalHits), SustainedHits_1), CriticalHit_5up)
         
         ranged_boyz = {
+            'devastators': devastators,
             'eradicators': eradicators,
             'eradicators_melta': eradicators_melta,
-            'devastators': devastators
+            'eradicators_built_right': eradicators_if_i_built_them_different,
+            'eradicators_melta_built_right': eradicators_melta_if_i_built_them_different,
+            'full_squad_eradicators': full_squad_eradicators,
+            'full_squad_eradicators_melta' : full_squad_eradicators_melta,
+            'full_eradicators_firedis_stack': full_eradicators_firedis_stack,
+            'full_eradicators_melta_firedis_stack': full_eradicators_melta_firedis_stack,
         }
 
         # ==================================================================================== #
