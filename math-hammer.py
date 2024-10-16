@@ -115,16 +115,17 @@ def modifier_reroll_variable_stat(sequence, sides):
 
 # =========================================================================== #
 class Dice():
-    def __init__(self, sides=6, fixed=None):
+    def __init__(self, sides=6, fixed=None, bias=0):
         self.roll_count = 0
         self.sides = sides
         self.fixed_value = fixed
         self.value = None if self.fixed_value is None else self.fixed_value
+        self.bias = bias
     
     def roll(self):
         self.roll_count += 1
         if self.fixed_value is None:
-            self.value = random.randint(1,self.sides)
+            self.value = random.randint(1,self.sides) + self.bias
         return self
 
 def determine_wound_roll(strength, toughness):
@@ -281,7 +282,7 @@ def create_standard_attack_modifier_sequence():
             # attacks might be callable, this will trigger use of the roll
             attacks_to_add = state.char['attacks'](state.roll['attacks'].value)
         except Exception as e:
-            attacks_to_add += state.char['attacks']
+            attacks_to_add += state.roll['attacks'].value
         for _ in range(0, attacks_to_add):
             state.pool['attacks'].append(Dice())
         return state
@@ -487,9 +488,9 @@ AP_PlusOne = Modifier(sequence='attacks', functor=modifier_characteristic_subtra
 AttacksPlusOne = Modifier(sequence='attacks', functor=modifier_characteristic_add_one('attacks'))
 DamagePlusOne = Modifier(sequence='attacks', functor=modifier_characteristic_add_one('damage'))
 
-def d6_damage_plus(X):
+def d6_plus(X):
     return lambda d6roll: d6roll + X
-def d3_damage_plus(X):
+def d3_plus(X):
     return lambda d6roll: (d6roll+1)//2 + X
 
 # =================================================================================== #
@@ -562,7 +563,8 @@ def run_test():
     STRENGTH = 4
     AP = 0
     DAMAGE = 1
-    VARDAMAGE = d3_damage_plus(0)
+    VARDAMAGE = d3_plus(0)
+    VARATTACKS = Dice(sides=3)
 
     TOUGHNESS = 5
     SAVE = 4
@@ -573,6 +575,7 @@ def run_test():
     attackers = [
         ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) , 0.0833 ),
         ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=VARDAMAGE) , 2 * 0.0833 ),
+        ( AStat(PTS=0, A=VARATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) , 2 * 0.0833 ),
         ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=VARDAMAGE) * Reroll_D3_Damage, 2.333333 * 0.0833 ),
         ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * LethalHits , 0.1389 ),
         ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * SustainedHits_1 , 0.1111 ),
