@@ -6,6 +6,12 @@ import numbers
 import copy
 import matplotlib.pyplot as plt
 import argparse
+from enum import Enum
+
+class CharState(Enum):
+    DiceList = 1
+    Dice = 2
+    Int = 3
 
 DEFAULT_COUNT = 1000
 # =========================================================================== #
@@ -102,11 +108,9 @@ def modifier_reroll_successes(sequence):
             state.scratch['break_mod_loop'] = True
         return state
     return functor
-def modifier_reroll_variable_stat(sequence, sides):
-    expected = np.sum(list(range(1,sides+1))) / sides
-    norm_factor = sides / 6
+def modifier_reroll_if_less_than(sequence, threshold):
     def functor(state):
-        if np.ceil(state.roll[sequence].value * norm_factor) < expected and state.roll[sequence].roll_count < 2:
+        if state.roll[sequence].value < threshold and state.roll[sequence].roll_count < 2:
             source = state.determine_pool_source(sequence)
             state.pool[source].append(state.roll[sequence])
             state.scratch['break_mod_loop'] = True
@@ -126,6 +130,8 @@ class Dice():
         self.roll_count += 1
         if self.fixed_value is None:
             self.value = random.randint(1,self.sides) + self.bias
+        if self.roll_count > 2:
+            raise ValueError(f"Roll count reached {self.roll_count}, which is illegal")
         return self
 
 def determine_wound_roll(strength, toughness):
@@ -149,8 +155,6 @@ def determine_save(save, invuln, armourpen):
 class AttackSequenceState():
     def __init__(self):
         self.scratch = {} # for, you know, whatever
-        # self.pool = {'attacks': [], 'hit': [], 'wound': [], 'save': [], 'damage': [], 'fnp': []} # this works
-        # self.roll = {'hit': None, 'wound': None, 'save': None, 'damage': None, 'fnp': None} # this works
         # Pools are lists of Dice.  These dice move to the next pool when success is marked
         self.pool = {'preamble': [], 'attacks': [], 'hit': [], 'wound': [], 'save': [], 'damage': [], 'fnp': []}
         # Roll is the current dice being rolled.
@@ -214,8 +218,6 @@ class AttackSequenceState():
         return determine_save(self.threshold['sv'], self.threshold['invuln'], self.threshold['armourpen'])
 
     def determine_pool_source(self, sequence):
-        # self.pool = {'preamble': [], 'attacks': [], 'hit': [], 'wound': [], 'save': [], 'damage': [], 'fnp': []}
-        # self.roll = {'attacks': None, 'hit': None, 'wound': None, 'save': None, 'damage': None, 'fnp': None}
         if sequence == 'attacks':
             return 'preamble'
         if sequence == 'hit':
@@ -238,9 +240,26 @@ def create_standard_attack_modifier_sequence():
         # unmod + value = modified, therefore
         #   value = modified - unmod
         modifier_value = modified - unmodified
-        # check whether it's 
         modifier_value = np.clip(modifier_value, a_min=-1, a_max=1)
         return unmodified + modifier_value
+
+    def test_for_diceness(state, characteristic):
+        try: # it's a [Dice,]
+            for item in state.char[characteristic]:
+                pass
+            return CharState.DiceList
+        except Exception as e:
+            pass
+        
+        try: # it's a Dice
+            if state.char[characteristic].sides > 0: # i.e. is rollable
+                pass
+            return CharState.Dice
+        except Exception as e:
+            pass
+
+        # it's an int, or someone else can throw if not
+        return CharState.Int
 
     def intialize_handler(state):
         # Pools are lists of Dice.  These dice move to the next pool when success is marked
@@ -255,25 +274,16 @@ def create_standard_attack_modifier_sequence():
         # check if state.char['attacks'] is list, if so, add it directly
         # check if state.char is a Dice.  if so, add it to the list
         # if it is an int, create a dice with the value fixed to that int
-        try_again = False
-        try: # it's a [Dice,]
+        char_is_what = test_for_diceness(state, 'attacks')
+        if char_is_what == CharState.DiceList:
             for item in state.char['attacks']:
                 state.pool['preamble'].append(item)
-        except Exception as e:
-            try_again = True
-        
-        if try_again is True:
-            try_again = False
-            try: # it's a Dice
-                if state.char['attacks'].sides > 0: # i.e. is rollable
-                    state.pool['preamble'].append(state.char['attacks'])
-            except Exception as e:
-                try_again = True
-        
-        if try_again is True:
-            # okay, it must be an int
-            # if not, another handler can take exception
+        elif char_is_what == CharState.Dice:
+            state.pool['preamble'].append(state.char['attacks'])
+        elif char_is_what == CharState.Int:
             state.pool['preamble'].append(Dice(sides=6, fixed=state.char['attacks']))
+        else:
+            raise ValueError("Impossible")
         return state
     def resolve_attack_pool(state):
         # the preamble determined how many dice, all we need to do is pass the value straight in
@@ -319,15 +329,22 @@ def create_standard_attack_modifier_sequence():
         return state
     def resolve_save_pool(state):
         if state.scratch['unmodified_roll'].value == 1 or state.roll['save'].value < state.determine_threshold('save'):
-            state.pool['save'].append(Dice())
+            # what dice gets added to the pool?
+            # well, if the user has already provided a Dice, use that
+            # otherwise, add a Dice that has a fixed value equal to the damage char
+            char_state = test_for_diceness(state, 'damage')
+            if char_state is CharState.Int:
+                state.pool['save'].append(Dice(fixed=state.char['damage']))
+            elif char_state is CharState.DiceList:
+                for item in state.char['damage']:
+                    state.pool['save'].append(item)
+            elif char_state is CharState.Dice:
+                state.pool['save'].append(state.char['damage'])
+            else:
+                raise ValueError("Impossible save pool state")
         return state
     def resolve_damage_pool(state):
-        damage_to_add = 0
-        try:
-            # damage might be callable, this will trigger use of the roll
-            damage_to_add = state.char['damage'](state.roll['damage'].value)
-        except Exception as e:
-            damage_to_add += state.char['damage']
+        damage_to_add = state.roll['damage'].value
         for _ in range(0, damage_to_add):
             state.pool['damage'].append(Dice())
         return state
@@ -451,7 +468,7 @@ class DStat():
                 pool_source = state.determine_pool_source(sequence)
                 while len(state.pool[pool_source]) > 0:
                     # remove the dice from the pool, roll it, then apply any applicable modifiers
-                    the_dice = state.pool[pool_source][0]
+                    the_dice = copy.deepcopy(state.pool[pool_source][0])
                     state.pool[pool_source] = state.pool[pool_source][1:]
                     state.scratch['unmodified_roll'] = the_dice.roll()
                     state.roll[sequence] = copy.deepcopy(state.scratch['unmodified_roll'])
@@ -476,8 +493,8 @@ RerollWoundsOne = Modifier(sequence='wound', functor=modifier_reroll_ones('wound
 TwinLinked = RerollWounds
 RerollHits = Modifier(sequence='hit', functor=modifier_reroll_fails('hit'))
 RerollHitsOne = Modifier(sequence='hit', functor=modifier_reroll_ones('hit'))
-Reroll_D6_Damage = Modifier(sequence='damage', functor=modifier_reroll_variable_stat(sequence='damage', sides=6))
-Reroll_D3_Damage = Modifier(sequence='damage', functor=modifier_reroll_variable_stat(sequence='damage', sides=3))
+Reroll_D6_Damage = Modifier(sequence='damage', functor=modifier_reroll_if_less_than(sequence='damage', threshold=4))
+Reroll_D3_Damage = Modifier(sequence='damage', functor=modifier_reroll_if_less_than(sequence='damage', threshold=2))
 PlusOneToWound = Modifier(sequence='wound', functor=modifier_roll_add_one('wound'))
 PlusOneToHit = Modifier(sequence='hit', functor=modifier_roll_add_one('hit'))
 LethalHits = Modifier(sequence='hit', functor=modifier_lethal_hits())
@@ -487,11 +504,6 @@ StrengthPlusOne = Modifier(sequence='attacks', functor=modifier_characteristic_a
 AP_PlusOne = Modifier(sequence='attacks', functor=modifier_characteristic_subtract_one('armourpen'))
 AttacksPlusOne = Modifier(sequence='attacks', functor=modifier_characteristic_add_one('attacks'))
 DamagePlusOne = Modifier(sequence='attacks', functor=modifier_characteristic_add_one('damage'))
-
-def d6_plus(X):
-    return lambda d6roll: d6roll + X
-def d3_plus(X):
-    return lambda d6roll: (d6roll+1)//2 + X
 
 # =================================================================================== #
 def mean_loop(attacker, defender, count):
@@ -531,19 +543,6 @@ def phist_loop(attacker, defender, count):
     phist = phist[::-1]
     return phist
 
-def force_strictly_monotonic(xdata, ydata):
-    # just along the y-axis
-    # we'll just assume x is already stricly monotonic
-    # also, the length of xdata and ydata are the same
-    assert len(xdata) == len(ydata)
-
-    index_list = [0]
-    for ii in range(1, len(ydata)-1):
-        if ydata[ii] != ydata[ii+1]:
-            index_list.append(ii)
-    index_list.append(len(ydata)-1)
-    return xdata[index_list], ydata[index_list]
-
 def mod_squad(squad_list, mod):
     tmp = copy.deepcopy([x * mod for x in squad_list])
     return tmp
@@ -563,7 +562,7 @@ def run_test():
     STRENGTH = 4
     AP = 0
     DAMAGE = 1
-    VARDAMAGE = d3_plus(0)
+    VARDAMAGE = Dice(sides=3)
     VARATTACKS = Dice(sides=3)
 
     TOUGHNESS = 5
@@ -592,7 +591,7 @@ def run_test():
         print(f"actual, expected: {mean_loop(attacker=test_att, defender=test_def, count=10000):0.4f}, {expected:0.4f}")
 
 if __name__ == "__main__":
-    if True:
+    if False:
         run_test()
     else:
         # The targets
@@ -617,7 +616,7 @@ if __name__ == "__main__":
         # ==================================================================================== #
         #       The dreaded Wraithguard
         # ==================================================================================== #
-        elf_wraithguard_cannon = AStat(PTS=190/5, A=1, BS_WS=4, S=14, AP=-4, D=d6_damage_plus(0)) * DevestatingWounds
+        elf_wraithguard_cannon = AStat(PTS=190/5, A=1, BS_WS=4, S=14, AP=-4, D=Dice()) * DevestatingWounds
         elf_wraithguard_dscythe = AStat(PTS=190/5, A=1, BS_WS=4, S=10, AP=-4, D=1)
 
         # Our boyz
@@ -629,15 +628,15 @@ if __name__ == "__main__":
 
         characters = {
             'the_emperors_champion_strike': [ the_emperors_champion_strike * TemplarVow ],
-            'chaplain_gregor_ironmaw': chaplain_gregor_ironmaw * TemplarVow
+            'chaplain_gregor_ironmaw': [ chaplain_gregor_ironmaw * TemplarVow ]
         }
 
         # ==================================================================================== #
         #       Ranged Boyz
         # ==================================================================================== #
-        eradicator_firing_at_a_tank = AStat(PTS=95/3, A=1, BS_WS=3, S=9, AP=-4, D=d6_damage_plus(0))  * RerollHits  * RerollWounds * Reroll_D6_Damage
-        eradicator_firing_at_a_tank_in_melta_range = AStat(PTS=95/3, A=1, BS_WS=3, S=9, AP=-4, D=d6_damage_plus(2))  * RerollHits  * RerollWounds * Reroll_D6_Damage
-        devastator_lascannon_not_moved = AStat(PTS=120/5, A=1, BS_WS=4, S=12, AP=-3, D=d6_damage_plus(1)) * PlusOneToHit
+        eradicator_firing_at_a_tank = AStat(PTS=95/3, A=1, BS_WS=3, S=9, AP=-4, D=Dice())  * RerollHits  * RerollWounds * Reroll_D6_Damage
+        eradicator_firing_at_a_tank_in_melta_range = AStat(PTS=95/3, A=1, BS_WS=3, S=9, AP=-4, D=Dice(bias=2))  * RerollHits  * RerollWounds * Reroll_D6_Damage
+        devastator_lascannon_not_moved = AStat(PTS=120/5, A=1, BS_WS=4, S=12, AP=-3, D=Dice(bias=1)) * PlusOneToHit
 
         eradicators = [copy.deepcopy(eradicator_firing_at_a_tank) for _ in range(0,3)]
         eradicators_melta = [copy.deepcopy(eradicator_firing_at_a_tank_in_melta_range) for _ in range(0,3)]
@@ -793,6 +792,7 @@ if __name__ == "__main__":
         par.add_argument('ATTACKER', type=str, choices=ATTACKER_OPTIONS.keys(), help='Attacker group to run in simulation.')
         par.add_argument('DEFENDER', type=str, choices=DEFENDER_OPTIONS.keys(), help='Defender to run in simulation.')
         par.add_argument('--count', type=str, help=f'Number of sequences to run.  Default is {DEFAULT_COUNT}', default=DEFAULT_COUNT)
+        par.add_argument('--verylikely', type=float, help='Threshold, on range [0,1], that is considered "Very Likely', default=5/6.0)
 
         args = par.parse_args()
 
@@ -801,7 +801,7 @@ if __name__ == "__main__":
 
         h = plt.figure(1)
 
-        VERY_LIKELY = 5/6.0
+        VERY_LIKELY = args.verylikely
         for k in the_list:
             data = phist_loop(attacker=the_list[k], defender=the_target, count=args.count)
             xdata = np.asarray([ float(x) for x in range(0,len(data)) ])
