@@ -116,9 +116,22 @@ def modifier_reroll_if_less_than(sequence, threshold):
             state.scratch['break_mod_loop'] = True
         return state
     return functor
+def modifier_always_succeed(sequence):
+    def functor(state):
+        state.pool[sequence].append(copy.deepcopy(state.roll[sequence]))
+        state.scratch['break_mod_loop'] = True
+        return state
+    return functor
+
+
 
 # =========================================================================== #
 class Dice():
+    '''
+        TODO 'sides' could also be a list of integers, in which case we are 
+        rolling multiple "dice" but to the framework, it's only a single 
+        rerollable "thing".
+    '''
     def __init__(self, sides=6, fixed=None, bias=0):
         self.roll_count = 0
         self.sides = sides
@@ -470,7 +483,7 @@ class DStat():
                     # remove the dice from the pool, roll it, then apply any applicable modifiers
                     the_dice = copy.deepcopy(state.pool[pool_source][0])
                     state.pool[pool_source] = state.pool[pool_source][1:]
-                    state.scratch['unmodified_roll'] = the_dice.roll()
+                    state.scratch['unmodified_roll'] = copy.deepcopy(the_dice.roll())
                     state.roll[sequence] = copy.deepcopy(state.scratch['unmodified_roll'])
                     for modifier in self.modifiers[sequence] + attacker.modifiers[sequence] + postamble[sequence]:
                         state = modifier(state)
@@ -488,6 +501,7 @@ class Modifier():
         self.seq = sequence
         self.func = functor 
     
+Torrent = Modifier(sequence='hit', functor=modifier_always_succeed('hit'))
 RerollWounds = Modifier(sequence='wound', functor=modifier_reroll_fails('wound'))
 RerollWoundsOne = Modifier(sequence='wound', functor=modifier_reroll_ones('wound'))
 TwinLinked = RerollWounds
@@ -573,24 +587,27 @@ def run_test():
     test_def = DStat(PTS=0, T=TOUGHNESS, Sv=SAVE, W=WOUNDS)
 
     attackers = [
-        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) , 0.0833 ),
-        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=VARDAMAGE) , 2 * 0.0833 ),
-        ( AStat(PTS=0, A=VARATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) , 2 * 0.0833 ),
-        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=VARDAMAGE) * Reroll_D3_Damage, 2.333333 * 0.0833 ),
-        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * LethalHits , 0.1389 ),
-        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * SustainedHits_1 , 0.1111 ),
-        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * SustainedHits_1 * CriticalHit_5up, 0.1389 ),
-        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * RerollHits , 0.125 ),
-        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * RerollHitsOne , 0.0972 ),
-        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * RerollWounds , 0.1389 ),
-        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * RerollWoundsOne , 0.0972 ),
-        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * PlusOneToWound , 0.1250 ),
-        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * PlusOneToHit , 0.1111 ),
-        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * RerollHits * RerollWounds , 0.2083 ),
+        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) , 0.0833, 'Nominal' ),
+        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * Torrent , 0.1667, 'Torrent' ),
+        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=VARDAMAGE) , 2 * 0.0833, 'D3 Damage' ),
+        ( AStat(PTS=0, A=VARATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) , 2 * 0.0833, 'D3 Attacks' ),
+        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=VARDAMAGE) * Reroll_D3_Damage, 2.333333 * 0.0833, 'Rerolling D3 Damage'),
+        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * LethalHits , 0.1389, 'Lethal Hits' ),
+        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * SustainedHits_1 , 0.1111, 'Sustained Hits 1' ),
+        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * SustainedHits_1 * CriticalHit_5up, 0.1389, 'Sustained Hits 1, CritHit 5+' ),
+        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * RerollHits , 0.125, 'Reroll Hits' ),
+        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * RerollHitsOne , 0.0972, 'Reroll Hit Rolls of 1' ),
+        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * RerollWounds , 0.1389, 'Reroll Wounds' ),
+        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * RerollWoundsOne , 0.0972, 'Reroll Wound Rolls of 1' ),
+        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * PlusOneToWound , 0.1250, '+1 to Wound' ),
+        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * PlusOneToHit , 0.1111, '+1 to Hit' ),
+        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * RerollHits * RerollWounds , 0.2083, 'Full Rerolls' ),
     ]
 
-    for test_att, expected in attackers:
-        print(f"actual, expected: {mean_loop(attacker=test_att, defender=test_def, count=10000):0.4f}, {expected:0.4f}")
+    TEST_COUNT=10000
+    print(f"Context: Attacks=Damage=1 (unless noted otherwise), Hit=0.5, Wound=0.333, Save=0.5, MonteCarlo Count={TEST_COUNT}")
+    for test_att, expected, details in attackers:
+        print(f"actual, expected: {mean_loop(attacker=test_att, defender=test_def, count=TEST_COUNT):0.4f}, {expected:0.4f}  ({details})")
 
 if __name__ == "__main__":
     if False:
@@ -608,6 +625,7 @@ if __name__ == "__main__":
         aintercessor_on_the_d = DStat(PTS=75/5, T=4, Sv=3, W=2, name="Assault Intercessor")
         neophyte_on_the_d = DStat(PTS=10, T=4, Sv=4, W=2, name="Primaris Neophyte")
         eradicator_on_the_d = DStat(PTS=10, T=6, Sv=3, W=3, name="Eradicator")
+        redemptor_on_the_d = DStat(PTS=210, T=10, Sv=2, W=12, name="Redemptor Dreadnought")
 
         # Our vow
         TemplarVow = LethalHits
@@ -656,7 +674,23 @@ if __name__ == "__main__":
         # Eradicators + Apothecary Biologis with Fire Discipline = A lot of hurt
         full_eradicators_firedis_stack = mod_squad(mod_squad(mod_squad(add_unit(full_squad_eradicators, apothecary_bio_gun), LethalHits), SustainedHits_1), CriticalHit_5up)
         full_eradicators_melta_firedis_stack = mod_squad(mod_squad(mod_squad(add_unit(full_squad_eradicators_melta, apothecary_bio_gun), LethalHits), SustainedHits_1), CriticalHit_5up)
-        
+
+        blastadd = 1
+        # Venerable Brother Grammituis has 3 gun
+        ven_brother_grammituis_firing = [
+            AStat(PTS=210/3, A=Dice(), BS_WS=3, S=5, AP=-1, D=1) * Torrent, # heavy flamer
+            AStat(PTS=210/3, A=12, BS_WS=3, S=6, AP=0, D=1) * DevestatingWounds, # heavy onslaught gatling cannon
+            AStat(PTS=210/3, A=Dice(bias=blastadd), BS_WS=3, S=4, AP=0, D=1) * TwinLinked, # twin fragstorm grenade launcher
+        ] 
+
+        # The other dread has 4 gun
+        the_other_redemptor_firing = [
+            AStat(PTS=210/4, A=Dice(), BS_WS=3, S=5, AP=-1, D=1) * Torrent, # heavy flamer
+            AStat(PTS=210/4, A=Dice(bias=blastadd), BS_WS=3, S=4, AP=0, D=1) * TwinLinked, # twin fragstorm grenade launcher
+            AStat(PTS=210/4, A=Dice(bias=1+blastadd), BS_WS=3, S=9, AP=-4, D=3), # macro plasma incinerator
+            AStat(PTS=210/4, A=Dice(sides=3), BS_WS=3, S=8, AP=-1, D=2), # icarus rocket pod
+        ]
+
         ranged_boyz = {
             'devastators': devastators,
             'eradicators': eradicators,
@@ -665,8 +699,10 @@ if __name__ == "__main__":
             'eradicators_melta_built_right': eradicators_melta_if_i_built_them_different,
             'full_squad_eradicators': full_squad_eradicators,
             'full_squad_eradicators_melta' : full_squad_eradicators_melta,
-            'full_eradicators_firedis_stack': full_eradicators_firedis_stack,
-            'full_eradicators_melta_firedis_stack': full_eradicators_melta_firedis_stack,
+            'redemptor_using_gun': the_other_redemptor_firing,
+            'ven_brother_grammituis_using_gun': ven_brother_grammituis_firing,
+            # 'full_eradicators_firedis_stack': full_eradicators_firedis_stack,
+            # 'full_eradicators_melta_firedis_stack': full_eradicators_melta_firedis_stack,
         }
 
         # ==================================================================================== #
@@ -799,6 +835,11 @@ if __name__ == "__main__":
             'wraithguard': wraithguard,
             'waveserpent': waveserpent,
             'guardsmen': guardsmen,
+            'terminator': terminator_on_the_d,
+            'sword_bro': sword_bro_on_the_d,
+            'intercessor': aintercessor_on_the_d,
+            'neophyte': neophyte_on_the_d,
+            'eradicator': eradicator_on_the_d,
         }
         ATTACKER_OPTIONS = {
             'termies': terminator_assault_sqd_dict,
@@ -806,14 +847,14 @@ if __name__ == "__main__":
             'a_inter': assault_inter_dict,
             'sword_bros': sword_bros_dict,
             'ranged': ranged_boyz,
-            'chars': characters
+            'chars': characters,
         }
         
         par = argparse.ArgumentParser(description='Warhammer 40k 10th Ed. Math Hammer')
         par.add_argument('ATTACKER', type=str, choices=ATTACKER_OPTIONS.keys(), help='Attacker group to run in simulation.')
         par.add_argument('DEFENDER', type=str, choices=DEFENDER_OPTIONS.keys(), help='Defender to run in simulation.')
-        par.add_argument('--count', type=str, help=f'Number of sequences to run.  Default is {DEFAULT_COUNT}', default=DEFAULT_COUNT)
-        par.add_argument('--verylikely', type=float, help='Threshold, on range [0,1], that is considered "Very Likely', default=5/6.0)
+        par.add_argument('--count', type=str, help=f'Number of sequences to run.  Default is {DEFAULT_COUNT}.', default=DEFAULT_COUNT)
+        par.add_argument('--verylikely', type=float, help='Threshold, on range [0,1], that is considered "Very Likely". Default is 5/6.', default=5/6.0)
 
         args = par.parse_args()
 
