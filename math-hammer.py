@@ -536,7 +536,18 @@ def mean_loop(attacker, defender, count):
     # return mean
     return np.mean(acc)
 
-def phist_loop(attacker, defender, count):
+def stats_comp(sample):
+    # create histogram
+    phist = np.zeros((int(np.max(sample))+1,))
+    for ii in range(0,len(phist)):
+        phist[ii] = len(sample[sample == ii]) / len(sample)
+    histogram = copy.deepcopy(phist)
+    phist = phist[::-1]
+    phist = np.cumsum(phist)
+    cdf = phist[::-1]
+    return cdf, histogram
+
+def stats_loop(attacker, defender, count):
     N = count
     acc = np.zeros((N,)) 
     if type(attacker) is list:
@@ -548,15 +559,30 @@ def phist_loop(attacker, defender, count):
     else:
         for ii in range(0, N):
             acc[ii] = defender - attacker
-        # create histogram
-    phist = np.zeros((int(np.max(acc))+1,))
-    for ii in range(0,len(phist)):
-        phist[ii] = len(acc[acc == ii]) / len(acc)
+    cdf, histogram = stats_comp(acc)
+    return cdf, histogram, acc
 
-    phist = phist[::-1]
-    phist = np.cumsum(phist)
-    phist = phist[::-1]
-    return phist
+def fold_to_models_removed_stats(damage_seq, target):
+    W = target.wounds
+    # move through the sequence, sequentially, and note how many "swings" it took to equal-or-exceed the wounds of the target
+    # we also want to compute about how many models are removed per swing
+    swings_taken = []
+    models_removed = []
+    acc = 0
+    count = 0
+    for damage_dealt in damage_seq:
+        count += 1
+        acc += damage_dealt
+        if acc >= W:
+            swings_taken.append(count)
+            count = 0
+            acc = 0
+        models_removed.append(int(damage_dealt / W))
+    # swings_taken is our sample
+    cdf_rounds, _ = stats_comp(np.asarray(swings_taken))
+    cdf_removed, _ = stats_comp(np.asarray(models_removed))
+    return cdf_rounds, cdf_removed
+
 
 def mod_squad(squad_list, mod):
     tmp = copy.deepcopy([x * mod for x in squad_list])
@@ -675,7 +701,7 @@ if __name__ == "__main__":
         full_eradicators_firedis_stack = mod_squad(mod_squad(mod_squad(add_unit(full_squad_eradicators, apothecary_bio_gun), LethalHits), SustainedHits_1), CriticalHit_5up)
         full_eradicators_melta_firedis_stack = mod_squad(mod_squad(mod_squad(add_unit(full_squad_eradicators_melta, apothecary_bio_gun), LethalHits), SustainedHits_1), CriticalHit_5up)
 
-        blastadd = 1
+        blastadd = 0
         # Venerable Brother Grammituis has 3 gun
         ven_brother_grammituis_firing = [
             AStat(PTS=210/3, A=Dice(), BS_WS=3, S=5, AP=-1, D=1) * Torrent, # heavy flamer
@@ -703,6 +729,25 @@ if __name__ == "__main__":
             'ven_brother_grammituis_using_gun': ven_brother_grammituis_firing,
             # 'full_eradicators_firedis_stack': full_eradicators_firedis_stack,
             # 'full_eradicators_melta_firedis_stack': full_eradicators_melta_firedis_stack,
+        }
+
+        # ==================================================================================== #
+        #       Redemptor Fists
+        # ==================================================================================== #
+        redemptor_claw = [ AStat(PTS=210, A=Dice(), BS_WS=3, S=5, AP=-1, D=1) * TemplarVow ]
+        brutalis_redemptor_talons_strike = [ AStat(PTS=160, A=6, BS_WS=3, S=12, AP=-2, D=3) * TemplarVow * TwinLinked]
+        brutalis_redemptor_talons_sweep = [ AStat(PTS=160, A=10, BS_WS=3, S=7, AP=-2, D=1) * TemplarVow * TwinLinked]
+        redemptor_claw_wrath = mod_squad(mod_squad(redemptor_claw, AP_PlusOne), StrengthPlusOne)
+        brutalis_redemptor_talons_strike_wrath = mod_squad(mod_squad(brutalis_redemptor_talons_strike, AP_PlusOne), StrengthPlusOne)
+        brutalis_redemptor_talons_sweep_wrath = mod_squad(mod_squad(brutalis_redemptor_talons_sweep, AP_PlusOne), StrengthPlusOne)
+
+        redemptor_boyz = {
+            'redemptor_claw': redemptor_claw,
+            'redemptor_claw_wrath': redemptor_claw_wrath,
+            'brutalis_redemptor_talons_strike': brutalis_redemptor_talons_strike,
+            'brutalis_redemptor_talons_strike_wrath': brutalis_redemptor_talons_strike_wrath,
+            'brutalis_redemptor_talons_sweep': brutalis_redemptor_talons_sweep,
+            'brutalis_redemptor_talons_sweep_wrath': brutalis_redemptor_talons_sweep_wrath,
         }
 
         # ==================================================================================== #
@@ -848,6 +893,7 @@ if __name__ == "__main__":
             'sword_bros': sword_bros_dict,
             'ranged': ranged_boyz,
             'chars': characters,
+            'redemptor_boyz': redemptor_boyz,
         }
         
         par = argparse.ArgumentParser(description='Warhammer 40k 10th Ed. Math Hammer')
@@ -865,22 +911,32 @@ if __name__ == "__main__":
 
         VERY_LIKELY = args.verylikely
         for k in the_list:
-            data = phist_loop(attacker=the_list[k], defender=the_target, count=args.count)
+            data, _, damage_sequence = stats_loop(attacker=the_list[k], defender=the_target, count=args.count)
+
+            def compute_likelihood_value(data, thresh):
+                xdata = np.asarray([ float(x) for x in range(0,len(data)) ])
+                return np.interp(thresh, data[::-1], xdata[::-1])
+
             xdata = np.asarray([ float(x) for x in range(0,len(data)) ])
-            # X must be monotonically increasing!
-            very_likely_damage_output = np.interp(VERY_LIKELY, data[::-1], xdata[::-1])
             likelyhood_of_kill = np.interp(the_target.wounds, xdata, data)
+            very_likely_damage_output = compute_likelihood_value(data, VERY_LIKELY)
+
             # sum the points for each side
             def_points = the_target.points
             att_points = np.sum([x.points for x in the_list[k]])
             # potential relative to point cost
             points_per_damage = att_points / very_likely_damage_output
-
+            
+            # models-removed-per-round and rounds-taken-to-remove-model
+            cdf_rounds_taken, cdf_models_removed = fold_to_models_removed_stats(damage_sequence, the_target)
+            very_likely_number_of_rounds_taken = compute_likelihood_value(cdf_rounds_taken, VERY_LIKELY)
+            very_likely_models_removed = compute_likelihood_value(cdf_models_removed, VERY_LIKELY)
 
             print(f"================ {k} ")
             print(f"  {att_points} points attacking a target of {def_points} points")
-            print(f"  {int(likelyhood_of_kill*100)}% chance of one-shot")
             print(f"  {int(VERY_LIKELY*100)}% chance {int(very_likely_damage_output)} or more damage is dealt.")
+            print(f"  {int(VERY_LIKELY*100)}% chance {very_likely_number_of_rounds_taken:0.1f} rounds taken to remove a model.")
+            print(f"  {int(VERY_LIKELY*100)}% chance {int(very_likely_models_removed)} models or more are removed in a single round.")
             print(f"  {points_per_damage:0.2f} PPD")
             plt.plot(data)
         plt.legend(the_list.keys())
