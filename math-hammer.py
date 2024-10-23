@@ -13,6 +13,24 @@ class CharState(Enum):
     Dice = 2
     Int = 3
 
+def test_for_diceness(state, characteristic):
+    try: # it's a [Dice,]
+        for item in state.char[characteristic]:
+            pass
+        return CharState.DiceList
+    except Exception as e:
+        pass
+    
+    try: # it's a Dice
+        if state.char[characteristic].sides > 0: # i.e. is rollable
+            pass
+        return CharState.Dice
+    except Exception as e:
+        pass
+
+    # it's an int, or someone else can throw if not
+    return CharState.Int
+
 DEFAULT_COUNT = 1000
 # =========================================================================== #
 ## more complicated stuff, or faction specific, or USR specific
@@ -41,18 +59,17 @@ def modifier_lethal_hits():
     return modifier_critical_case('hit', functor)
 def modifier_devastating_wounds():
     def functor(state):
-        # when a 6 is rolled, skip the save
-        # normally, a 6 is a success, and so the 'save' pool will go up by one
-        # here, we will subtract one from the 'save' pool and add 'damage' to the 'damage' pool
-        damage_to_add = 0
-        try:
-            # damage might be callable, this will trigger use of the roll
-            damage_to_add = state.char['damage'](state.roll['damage'].value)
-        except Exception as e:
-            damage_to_add = state.char['damage']
+        char_state = test_for_diceness(state, 'damage')
+        if char_state is CharState.Int:
+            state.pool['save'].append(Dice(fixed=state.char['damage']))
+        elif char_state is CharState.DiceList:
+            for item in state.char['damage']:
+                state.pool['save'].append(item)
+        elif char_state is CharState.Dice:
+            state.pool['save'].append(state.char['damage'])
+        else:
+            raise ValueError("Impossible save pool state")
         state.scratch['break_mod_loop'] = True
-        for _ in range(0, damage_to_add):
-            state.pool['damage'].append(Dice())
         return state
     return modifier_critical_case('wound', functor)
 
@@ -262,23 +279,6 @@ def create_standard_attack_modifier_sequence():
         modifier_value = np.clip(modifier_value, a_min=-1, a_max=1)
         return unmodified + modifier_value
 
-    def test_for_diceness(state, characteristic):
-        try: # it's a [Dice,]
-            for item in state.char[characteristic]:
-                pass
-            return CharState.DiceList
-        except Exception as e:
-            pass
-        
-        try: # it's a Dice
-            if state.char[characteristic].sides > 0: # i.e. is rollable
-                pass
-            return CharState.Dice
-        except Exception as e:
-            pass
-
-        # it's an int, or someone else can throw if not
-        return CharState.Int
 
     def intialize_handler(state):
         # Pools are lists of Dice.  These dice move to the next pool when success is marked
@@ -513,7 +513,8 @@ class Model():
         self.weapons = copy.deepcopy(weapons)
         self.defence = defence
         self.name = name
-        self.pts = pts
+        self.points = pts
+        self.wounds = self.defence.wounds
 
     # TODO is this a bad idea?  Maybe!
     def __div__(self, other):
@@ -530,19 +531,34 @@ class Model():
     def __sub__(self, attacker):
         '''
             model - model
+            model - unit
         '''
+        def handle_model(att_model):
+            try:
+                acc = 0
+                for wpn in att_model.weapons:
+                    acc += self.defence - wpn
+                return acc
+            except Exception as e:
+                return self.defence - att_model.weapons
+
         try:
             acc = 0
-            for wpn in attacker.weapons:
-                acc += self.defence - wpn
+            for model in attacker.models:
+                acc += handle_model(model)
             return acc
         except Exception as e:
-            return self.defence - attacker.weapons
+            pass
+
+        return handle_model(attacker)
 
     def __str__(self):
-        result = f"{self.name}({self.pts} pts):"
-        for wpn in self.weapons:
-            result += f"\n  {wpn}"
+        result = f"{self.name}({self.points} pts):"
+        try:
+            for wpn in self.weapons:
+                result += f"\n  {wpn}"
+        except Exception as e:
+            result += f"\n  {self.weapons}"
         result += f"\n  {self.defence}"
         return result
 
@@ -550,7 +566,7 @@ class Unit():
     def __init__(self, model_list):
         self.models = model_list
         self.wounds = np.sum([mdl.defence.wounds for mdl in self.models])
-        self.points = np.sum([mdl.pts for mdl in self.models])
+        self.points = np.sum([mdl.points for mdl in self.models])
 
     def __str__(self):
         return f"{self.models[0]}"
@@ -570,17 +586,20 @@ class Unit():
         '''
         acc = 0
         defending_model = self._get_best_defender()
-        success = True
         try: # unit - unit
             for model in other.models:
                 acc += defending_model - model
-        except Exception as e:
-            success = False
-        if success is True:
             return acc
-        return defending_model - model
+        except Exception as e:
+            pass
+        return defending_model - other
     
     def _get_best_defender(self):
+        ''' the rules generally are:
+            1. use majority toughness
+            2. use best save
+        '''
+        # TODO for now, we'll just use the first model in the unit
         return self.models[0]
         
 
@@ -707,17 +726,19 @@ def run_test():
     SAVE = 4
     WOUNDS = 1
 
-    TestModelArmour = DStat(PTS=0, T=TOUGHNESS, Sv=SAVE, W=WOUNDS)
-    TestModelGun = AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE)
-    TestModelVarD = AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=VARDAMAGE)
-    TestModelVarA = AStat(PTS=0, A=VARATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE)
+    TestModelArmour = DStat(T=TOUGHNESS, Sv=SAVE, W=WOUNDS)
+    TestModelGun = AStat(A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE)
+    TestModelVarD = AStat(A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=VARDAMAGE)
+    TestModelVarA = AStat(A=VARATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE)
 
     test_def = Model(TestModelGun, TestModelArmour)
 
     attackers = [
         ( Model(TestModelGun, TestModelArmour) , 0.0833, 'Nominal' ),
+        ( Model([TestModelGun, TestModelGun, TestModelGun], TestModelArmour) , 3*0.0833, 'Nominal*3' ),
         ( Model(TestModelGun, TestModelArmour) * Torrent , 0.1667, 'Torrent' ),
         ( Model(TestModelVarD, TestModelArmour) , 2 * 0.0833, 'D3 Damage' ),
+        ( Model(TestModelVarD, TestModelArmour) * DevestatingWounds, 0.25, 'D3 Damage with Devestating' ),
         ( Model(TestModelVarA, TestModelArmour) , 2 * 0.0833, 'D3 Attacks' ),
         ( Model(TestModelVarD, TestModelArmour) * Reroll_D3_Damage, 2.333333 * 0.0833, 'Rerolling D3 Damage'),
         ( Model(TestModelGun, TestModelArmour) * LethalHits , 0.1389, 'Lethal Hits' ),
@@ -741,25 +762,70 @@ if __name__ == "__main__":
     if False:
         run_test()
     else:
-        # The targets
-        leman_russ_tank_model = Model(
+        # ==================================================================================== #
+        #       Imperial Guard assests
+        # ==================================================================================== #
+        leman_russ_tank = Model(
             weapons=[
                 AStat(A=Dice(bias=3), BS_WS=4, S=10, AP=-1, D=3, description="Battle Cannon"),
                 AStat(A=Dice(sides=3), BS_WS=4, S=8, AP=-3, D=2, description="Plasma Cannon (supercharged)"),
                 AStat(A=Dice(sides=3), BS_WS=4, S=8, AP=-3, D=2, description="Plasma Cannon (supercharged)"),
                 AStat(A=3, BS_WS=4, S=5, AP=-1, D=2, description="Heavy Bolter"),
+                AStat(A=1, BS_WS=4, S=14, AP=-3, D=Dice(), description="Hunter-killer Missle"),
             ], 
             defence=DStat(T=11, Sv=2, W=13), 
-            pts=170, name="Leman Russ Battle Tank")
-        leman_russ_tank = Unit([leman_russ_tank_model])
-        # chimera = DStat(PTS=70, T=9, Sv=3, W=11, name="Chimera")
-        # wraithguard = DStat(PTS=190/5, T=7, Sv=2, W=3, name="Wraithguard")
+            pts=170, name="Leman Russ Battle Tank"
+        )
+        chimera = Model(
+            weapons=[
+                AStat(A=Dice(), BS_WS=4, S=5, AP=-1, D=1, description="Chimera Heavy Flamer") * Torrent,
+                AStat(A=3, BS_WS=4, S=5, AP=-1, D=2, description="Heavy Bolter") * SustainedHits_1,
+                AStat(A=3+3, BS_WS=4, S=4, AP=0, D=1, description="Heavy Stubber (rapid firing)"),
+                AStat(A=6+6, BS_WS=4, S=3, AP=0, D=1, description="Lasgun Array (rapid firing)"),
+                AStat(A=1, BS_WS=4, S=14, AP=-3, D=Dice(), description="Hunter-killer Missle"),
+            ],
+            defence=DStat(T=9, Sv=3, W=11),
+            pts=70, name="Chimera"
+        )
+
+        lasgun = AStat(A=2, BS_WS=4, S=3, AP=0, D=1, description="lasgun, King of Weapons (rapid firing)" )
+        laspistol = AStat(A=1, BS_WS=4, S=3, AP=0, D=1, description="laspistol" )
+        autocannon = AStat(A=2, BS_WS=4, S=3, AP=0, D=1, description="Autocannon" )
+        plasmagun = AStat(A=2, BS_WS=4, S=8, AP=-3, D=2, description="Plasma Gun (rapid firing, supercharged)" )
+        guardsmen_model = Model(weapons=lasgun, defence=DStat(T=3, Sv=5, W=1), pts=60/10, name="Guardsman")
+        guardsmen_plasma_model = Model(weapons=plasmagun, defence=DStat(T=3, Sv=5, W=1), pts=60/10, name="Guardsman")
+        guardsmen_sgt_model = Model(weapons=laspistol, defence=DStat(T=3, Sv=5, W=1), pts=60/10, name="Guardsman")
+        guardsmen_hvy_autcannon_model = Model(weapons=autocannon, defence=DStat(T=3, Sv=5, W=2), pts=2*60/10, name="Heavy Weapons Team")
+        guardsmen = Unit([
+            guardsmen_sgt_model,
+            guardsmen_hvy_autcannon_model, 
+            guardsmen_plasma_model,
+            guardsmen_plasma_model,
+            guardsmen_model,
+            guardsmen_model,
+            guardsmen_model,
+            guardsmen_model,
+            guardsmen_model,
+        ]) * PlusOneToHit
+
+        # ==================================================================================== #
+        #       Elf assests
+        # ==================================================================================== #
+        wraithguard_model_cannon = Model(
+            weapons=AStat(A=1, BS_WS=4, S=14, AP=-4, D=Dice(), description="Wraithcannon") * DevestatingWounds,
+            defence=DStat(T=7, Sv=2, W=3),
+            pts=190/5, name="Wraithguard with Cannon"
+        )
+        wraithguard_model_dscythe = Model(
+            weapons=AStat(A=Dice(), BS_WS=4, S=10, AP=-4, D=1, description="D-scythe") * DevestatingWounds,
+            defence=DStat(T=7, Sv=2, W=3),
+            pts=190/5, name="Wraithguard with Scythe"
+        )
+        wraithguard_cannon = Unit([wraithguard_model_cannon for _ in range(0,10)])
+        wraithguard_scythe = Unit([wraithguard_model_dscythe for _ in range(0,10)])
+
         # waveserpent = DStat(PTS=120, T=9, Sv=3, W=13, Inv=5, name="Wave Serpent")
-        # guardsmen = DStat(PTS=60/10, T=3, Sv=5, W=1, name="Humble Guardsmen")
-        chimera = DStat(T=9, Sv=3, W=11)
-        wraithguard = DStat(T=7, Sv=2, W=3)
         waveserpent = DStat(T=9, Sv=3, W=13, Inv=5)
-        guardsmen = DStat(T=3, Sv=5, W=1)
 
 
         # Our vow
@@ -768,9 +834,6 @@ if __name__ == "__main__":
 
 
         # Their boyz
-        # ==================================================================================== #
-        #       The dreaded Wraithguard
-        # ==================================================================================== #
         # elf_wraithguard_cannon = AStat(PTS=190/5, A=1, BS_WS=4, S=14, AP=-4, D=Dice()) * DevestatingWounds
         # elf_wraithguard_dscythe = AStat(PTS=190/5, A=1, BS_WS=4, S=10, AP=-4, D=1)
 
@@ -799,20 +862,23 @@ if __name__ == "__main__":
         eradicator_gravis = DStat(T=6, Sv=3, W=3, description="Eradicator Gravis")
 
         eradicators = Unit([
-            Model(weapons=melta_rifle, defence=eradicator_gravis, pts=95/3, name="Eradicator") * TotalObliteration,
-            Model(weapons=melta_rifle, defence=eradicator_gravis, pts=95/3, name="Eradicator") * TotalObliteration,
-            Model(weapons=multi_melta, defence=eradicator_gravis, pts=95/3, name="Eradicator") * TotalObliteration,
+            Model(weapons=melta_rifle, defence=eradicator_gravis, pts=95/3, name="Eradicator"),
+            Model(weapons=melta_rifle, defence=eradicator_gravis, pts=95/3, name="Eradicator"),
+            Model(weapons=multi_melta, defence=eradicator_gravis, pts=95/3, name="Eradicator"),
         ])
+        eradicators_at_vehicle = eradicators * TotalObliteration
         full_squad_eradicators = Unit([
-            Model(weapons=melta_rifle, defence=eradicator_gravis, pts=95/3, name="Eradicator") * TotalObliteration,
-            Model(weapons=melta_rifle, defence=eradicator_gravis, pts=95/3, name="Eradicator") * TotalObliteration,
-            Model(weapons=melta_rifle, defence=eradicator_gravis, pts=95/3, name="Eradicator") * TotalObliteration,
-            Model(weapons=melta_rifle, defence=eradicator_gravis, pts=95/3, name="Eradicator") * TotalObliteration,
-            Model(weapons=multi_melta, defence=eradicator_gravis, pts=95/3, name="Eradicator") * TotalObliteration,
-            Model(weapons=multi_melta, defence=eradicator_gravis, pts=95/3, name="Eradicator") * TotalObliteration,
+            Model(weapons=melta_rifle, defence=eradicator_gravis, pts=95/3, name="Eradicator"),
+            Model(weapons=melta_rifle, defence=eradicator_gravis, pts=95/3, name="Eradicator"),
+            Model(weapons=melta_rifle, defence=eradicator_gravis, pts=95/3, name="Eradicator"),
+            Model(weapons=melta_rifle, defence=eradicator_gravis, pts=95/3, name="Eradicator"),
+            Model(weapons=multi_melta, defence=eradicator_gravis, pts=95/3, name="Eradicator"),
+            Model(weapons=multi_melta, defence=eradicator_gravis, pts=95/3, name="Eradicator"),
         ])
+        full_squad_eradicators_at_vehicle = full_squad_eradicators * TotalObliteration
         # Eradicators + Apothecary Biologis with Fire Discipline = A lot of hurt
         full_eradicators_firedis_stack = full_squad_eradicators * BiologisFireDicipline
+        full_eradicators_firedis_stack_at_vehicle = full_squad_eradicators_at_vehicle * BiologisFireDicipline
 
         # blastadd = 0
         # # Venerable Brother Grammituis has 3 gun
@@ -832,11 +898,17 @@ if __name__ == "__main__":
 
         ranged_boyz = {
             'eradicators': eradicators,
+            'eradicators_at_vehicle': eradicators_at_vehicle,
             'full_squad_eradicators': full_squad_eradicators,
+            'full_squad_eradicators_at_vehicle': full_squad_eradicators_at_vehicle,
             # 'redemptor_using_gun': the_other_redemptor_firing,
             # 'ven_brother_grammituis_using_gun': ven_brother_grammituis_firing,
             'full_eradicators_firedis_stack': full_eradicators_firedis_stack,
             'leman_russ': leman_russ_tank,
+            'wraithguard_cannon': wraithguard_cannon,
+            'wraithguard_scythe': wraithguard_scythe,
+            'chimera': chimera,
+            'guardsmen': guardsmen,
         }
 
         # ==================================================================================== #
@@ -985,9 +1057,11 @@ if __name__ == "__main__":
         DEFENDER_OPTIONS = {
             'chimera': chimera,
             'leman_russ': leman_russ_tank,
-            'wraithguard': wraithguard,
+            'wraithguard_cannon': wraithguard_cannon,
+            'wraithguard_scythe': wraithguard_scythe,
             'waveserpent': waveserpent,
             'guardsmen': guardsmen,
+            'eradicators': eradicators,
         }
         ATTACKER_OPTIONS = {
             # 'termies': terminator_assault_sqd_dict,
@@ -1020,9 +1094,10 @@ if __name__ == "__main__":
                 xdata = np.asarray([ float(x) for x in range(0,len(data)) ])
                 return np.interp(thresh, data[::-1], xdata[::-1])
 
-            xdata = np.asarray([ float(x) for x in range(0,len(data)) ])
-            likelyhood_of_kill = np.interp(the_target.wounds, xdata, data)
+            # xdata = np.asarray([ float(x) for x in range(0,len(data)) ])
+            # likelyhood_of_kill = np.interp(the_target.wounds, xdata, data)
             very_likely_damage_output = compute_likelihood_value(data, VERY_LIKELY)
+            expected_damage_output = compute_likelihood_value(data, 0.5)
 
             # sum the points for each side
             def_points = the_target.points
@@ -1034,10 +1109,12 @@ if __name__ == "__main__":
             cdf_rounds_taken, cdf_models_removed = fold_to_models_removed_stats(damage_sequence, the_target)
             very_likely_number_of_rounds_taken = compute_likelihood_value(cdf_rounds_taken, VERY_LIKELY)
             very_likely_models_removed = compute_likelihood_value(cdf_models_removed, VERY_LIKELY)
+            expected_models_removed = compute_likelihood_value(cdf_models_removed, 0.5)
 
             print(f"================ {k} ")
             print(f"  {att_points} points attacking a target of {def_points} points")
             print(f"  {int(VERY_LIKELY*100)}% chance {int(very_likely_damage_output)} or more damage is dealt.")
+            print(f"    Expected value for damage is {int(expected_damage_output)}.")
             print(f"  {int(VERY_LIKELY*100)}% chance {very_likely_number_of_rounds_taken:0.1f} rounds taken to remove a model.")
             print(f"  {int(VERY_LIKELY*100)}% chance {int(very_likely_models_removed)} models or more are removed in a single round.")
             print(f"  {points_per_damage:0.2f} PPD")
