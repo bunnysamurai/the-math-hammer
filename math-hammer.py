@@ -399,14 +399,13 @@ def assign_char(phase_str, value):
     return fun
 
 class AStat():
-    def __init__(self, PTS, A, BS_WS, S, AP, D, name=None):
+    def __init__(self, A, BS_WS, S, AP, D, description="AStat"):
         self.attacks = A
         self.skill = BS_WS
         self.strength = S
         self.armourpen = AP
         self.damage = D
-        self.name = name if name is not None else "NA"
-        self.points = PTS
+        self.description = description
 
         # we only interact with the .char field
         self.modifiers = {'preamble': [assign_char('attacks', self.attacks), assign_char('damage', self.damage), assign_char('strength', self.strength), assign_char('armourpen', self.armourpen), assign_char('skill', self.skill)],
@@ -424,20 +423,24 @@ class AStat():
 
     def __mul__(self, other):
         result = copy.deepcopy(self)
-        result.modifiers[other.seq].append(other.func)
+        try:
+            for mod, seq in zip(other.func, other.seq):
+                result.modifiers[seq].append(mod)
+        except Exception as e:
+            result.modifiers[other.seq].append(other.func)
         return result
+
+    def __str__(self):
+        return f"{self.description}(A:{self.attacks} BS_WS:{self.skill} S:{self.strength} AP:{self.armourpen} D:{self.damage})"
     
 class DStat():
-    def __init__(self, PTS, T, Sv, W, Inv=None, FNP=None, name=None):
+    def __init__(self, T, Sv, W, Inv=None, FNP=None, description="DStat"):
         self.toughness = T
         self.save = Sv
         self.wounds = W
         self.invuln = Inv
         self.feelnopain = FNP
-        self.name = name if name is not None else "NA"
-        self.points = PTS
-
-        self.the_d6 = Dice(sides=6)
+        self.description = description
 
         # we only interact with the .char field
         self.modifiers = {'preamble': [assign_char('toughness', self.toughness), assign_char('invuln', self.invuln), assign_char('sv', self.save), assign_char('fnp', self.feelnopain)],
@@ -454,7 +457,7 @@ class DStat():
                           'fnp': [identity()]}
 
     def __str__(self):
-        result = f"{self.name} (T:{self.toughness} Sv:{self.save}+"
+        result = f"{self.description}(T:{self.toughness} Sv:{self.save}+"
         if self.invuln is not None:
             result += f"|{self.invuln}++"
         if self.feelnopain is not None:
@@ -465,7 +468,11 @@ class DStat():
 
     def __mul__(self, other):
         result = copy.deepcopy(self)
-        result.modifiers[other.seq].append(other.func)
+        try:
+            for mod in other.func:
+                result.modifiers[other.seq].append(mod)
+        except Exception as e:
+            result.modifiers[other.seq].append(other.func)
         return result
 
     def __sub__(self, attacker):
@@ -495,11 +502,75 @@ class DStat():
                     state = modifier(state)
         return state.resolve()
         
+class Model():
+    def __init__(self, weapons, defence, pts="N/A", name="N/A"):
+        self.weapon = copy.deepcopy(weapons)
+        self.defence = defence
+        self.name = name
+        self.pts = pts
+
+    # TODO is this a bad idea?  Maybe!
+    def __div__(self, other):
+        self.defence = self.defence * other
+        return self
+    def __mul__(self, other):
+        self.weapon = self.weapon * other
+        return self
+    def __sub__(self, attacker):
+        '''
+            model - model
+        '''
+        try:
+            acc = 0
+            for wpn in attacker.weapons:
+                acc += self.defence - wpn
+            return acc
+        except Exception as e:
+            return self.defence - attacker.weapons
+
+    def __str__(self):
+        return f"{self.name}({self.pts} pts):\n  {self.weapon}\n  {self.defence}"
+
+class Unit():
+    def __init__(self, model_list):
+        self.models = model_list
+
+    def __mul__(self, other):
+        '''
+            unit * modifier
+        '''
+        self.models = [x * other for x in self.models]
+
+    def __sub__(self, other):
+        '''
+            unit - unit
+            unit - model
+        '''
+        acc = 0
+        defending_model = self._get_best_defender()
+        success = True
+        try: # unit - unit
+            for model in other.models:
+                acc += defending_model - model
+        except Exception as e:
+            success = False
+        if success is True:
+            return acc
+        return defending_model - model
+        
+
 
 class Modifier():
     def __init__(self, sequence, functor):
-        self.seq = sequence
-        self.func = functor 
+        self.seq = [sequence]
+        self.func = [functor]
+
+    def __mul__(self, other):
+        self.seq += other.seq
+        self.func += other.func
+        return self
+
+
     
 Torrent = Modifier(sequence='hit', functor=modifier_always_succeed('hit'))
 RerollWounds = Modifier(sequence='wound', functor=modifier_reroll_fails('wound'))
@@ -610,24 +681,29 @@ def run_test():
     SAVE = 4
     WOUNDS = 1
 
-    test_def = DStat(PTS=0, T=TOUGHNESS, Sv=SAVE, W=WOUNDS)
+    TestModelArmour = DStat(PTS=0, T=TOUGHNESS, Sv=SAVE, W=WOUNDS)
+    TestModelGun = AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE)
+    TestModelVarD = AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=VARDAMAGE)
+    TestModelVarA = AStat(PTS=0, A=VARATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE)
+
+    test_def = Model(TestModelGun, TestModelArmour)
 
     attackers = [
-        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) , 0.0833, 'Nominal' ),
-        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * Torrent , 0.1667, 'Torrent' ),
-        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=VARDAMAGE) , 2 * 0.0833, 'D3 Damage' ),
-        ( AStat(PTS=0, A=VARATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) , 2 * 0.0833, 'D3 Attacks' ),
-        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=VARDAMAGE) * Reroll_D3_Damage, 2.333333 * 0.0833, 'Rerolling D3 Damage'),
-        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * LethalHits , 0.1389, 'Lethal Hits' ),
-        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * SustainedHits_1 , 0.1111, 'Sustained Hits 1' ),
-        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * SustainedHits_1 * CriticalHit_5up, 0.1389, 'Sustained Hits 1, CritHit 5+' ),
-        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * RerollHits , 0.125, 'Reroll Hits' ),
-        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * RerollHitsOne , 0.0972, 'Reroll Hit Rolls of 1' ),
-        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * RerollWounds , 0.1389, 'Reroll Wounds' ),
-        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * RerollWoundsOne , 0.0972, 'Reroll Wound Rolls of 1' ),
-        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * PlusOneToWound , 0.1250, '+1 to Wound' ),
-        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * PlusOneToHit , 0.1111, '+1 to Hit' ),
-        ( AStat(PTS=0, A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE) * RerollHits * RerollWounds , 0.2083, 'Full Rerolls' ),
+        ( Model(TestModelGun, TestModelArmour) , 0.0833, 'Nominal' ),
+        ( Model(TestModelGun, TestModelArmour) * Torrent , 0.1667, 'Torrent' ),
+        ( Model(TestModelVarD, TestModelArmour) , 2 * 0.0833, 'D3 Damage' ),
+        ( Model(TestModelVarA, TestModelArmour) , 2 * 0.0833, 'D3 Attacks' ),
+        ( Model(TestModelVarD, TestModelArmour) * Reroll_D3_Damage, 2.333333 * 0.0833, 'Rerolling D3 Damage'),
+        ( Model(TestModelGun, TestModelArmour) * LethalHits , 0.1389, 'Lethal Hits' ),
+        ( Model(TestModelGun, TestModelArmour) * SustainedHits_1 , 0.1111, 'Sustained Hits 1' ),
+        ( Model(TestModelGun, TestModelArmour) * SustainedHits_1 * CriticalHit_5up, 0.1389, 'Sustained Hits 1, CritHit 5+' ),
+        ( Model(TestModelGun, TestModelArmour) * RerollHits , 0.125, 'Reroll Hits' ),
+        ( Model(TestModelGun, TestModelArmour) * RerollHitsOne , 0.0972, 'Reroll Hit Rolls of 1' ),
+        ( Model(TestModelGun, TestModelArmour) * RerollWounds , 0.1389, 'Reroll Wounds' ),
+        ( Model(TestModelGun, TestModelArmour) * RerollWoundsOne , 0.0972, 'Reroll Wound Rolls of 1' ),
+        ( Model(TestModelGun, TestModelArmour) * PlusOneToWound , 0.1250, '+1 to Wound' ),
+        ( Model(TestModelGun, TestModelArmour) * PlusOneToHit , 0.1111, '+1 to Hit' ),
+        ( Model(TestModelGun, TestModelArmour) * RerollHits * RerollWounds , 0.2083, 'Full Rerolls' ),
     ]
 
     TEST_COUNT=10000
@@ -640,7 +716,15 @@ if __name__ == "__main__":
         run_test()
     else:
         # The targets
-        leman_russ_tank = DStat(PTS=170, T=11, Sv=2, W=13, name="Leman Russ")
+        leman_russ_tank = Model(
+            weapons=[
+                AStat(A=Dice(bias=3), BS_WS=4, S=10, AP=-1, D=3, description="Battle Cannon"),
+                AStat(A=Dice(sides=3), BS_WS=4, S=8, AP=-3, D=2, description="Plasma Cannon (supercharged)"),
+                AStat(A=Dice(sides=3), BS_WS=4, S=8, AP=-3, D=2, description="Plasma Cannon (supercharged)"),
+                AStat(A=3, BS_WS=4, S=5, AP=-1, D=2, description="Heavy Bolter"),
+            ], 
+            defence=DStat(T=11, Sv=2, W=13), 
+            pts=170, name="Leman Russ Battle Tank")
         chimera = DStat(PTS=70, T=9, Sv=3, W=11, name="Chimera")
         wraithguard = DStat(PTS=190/5, T=7, Sv=2, W=3, name="Wraithguard")
         waveserpent = DStat(PTS=120, T=9, Sv=3, W=13, Inv=5, name="Wave Serpent")
@@ -681,10 +765,13 @@ if __name__ == "__main__":
         # ==================================================================================== #
         #       Ranged Boyz
         # ==================================================================================== #
-        eradicator_firing_at_a_tank = AStat(PTS=95/3, A=1, BS_WS=3, S=9, AP=-4, D=Dice())  * RerollHits  * RerollWounds * Reroll_D6_Damage
-        eradicator_firing_at_a_tank_in_melta_range = AStat(PTS=95/3, A=1, BS_WS=3, S=9, AP=-4, D=Dice(bias=2))  * RerollHits  * RerollWounds * Reroll_D6_Damage
-        eradicator_multi_firing_at_a_tank = AStat(PTS=95/3, A=2, BS_WS=4, S=9, AP=-4, D=Dice())  * RerollHits  * RerollWounds * Reroll_D6_Damage
-        eradicator_multi_firing_at_a_tank_in_melta_range = AStat(PTS=95/3, A=2, BS_WS=4, S=9, AP=-4, D=Dice(bias=2))  * RerollHits  * RerollWounds * Reroll_D6_Damage
+        TotalObliteration = RerollHits  * RerollWounds * Reroll_D6_Damage
+        melta_rifle = AStat(PTS=95/3, A=1, BS_WS=3, S=9, AP=-4, D=Dice())
+    # def __init__(self, PTS, T, Sv, W, Inv=None, FNP=None, name=None):
+        eradicator_firing_at_a_tank = AStat(PTS=95/3, A=1, BS_WS=3, S=9, AP=-4, D=Dice())  * TotalObliteration
+        eradicator_firing_at_a_tank_in_melta_range = AStat(PTS=95/3, A=1, BS_WS=3, S=9, AP=-4, D=Dice(bias=2))  * TotalObliteration
+        eradicator_multi_firing_at_a_tank = AStat(PTS=95/3, A=2, BS_WS=4, S=9, AP=-4, D=Dice())  * TotalObliteration
+        eradicator_multi_firing_at_a_tank_in_melta_range = AStat(PTS=95/3, A=2, BS_WS=4, S=9, AP=-4, D=Dice(bias=2))  * TotalObliteration
         devastator_lascannon_not_moved = AStat(PTS=120/5, A=1, BS_WS=4, S=12, AP=-3, D=Dice(bias=1)) * PlusOneToHit
 
         devastators = [copy.deepcopy(devastator_lascannon_not_moved) for _ in range(0,4)]
@@ -695,6 +782,7 @@ if __name__ == "__main__":
         eradicators_melta_if_i_built_them_different = [copy.deepcopy(eradicator_firing_at_a_tank_in_melta_range) for _ in range(0,2)] + [copy.deepcopy(eradicator_multi_firing_at_a_tank_in_melta_range) for _ in range(0,1)]
 
         full_squad_eradicators = [copy.deepcopy(eradicator_firing_at_a_tank) for _ in range(0,4)] + [copy.deepcopy(eradicator_multi_firing_at_a_tank) for _ in range(0,2)]
+        full_squad_eradicators2 = [copy.deepcopy(eradicator_firing_at_a_tank2) for _ in range(0,4)] + [copy.deepcopy(eradicator_multi_firing_at_a_tank) for _ in range(0,2)]
         full_squad_eradicators_melta = [copy.deepcopy(eradicator_firing_at_a_tank_in_melta_range) for _ in range(0,4)] + [copy.deepcopy(eradicator_multi_firing_at_a_tank_in_melta_range) for _ in range(0,2)]
 
         # Eradicators + Apothecary Biologis with Fire Discipline = A lot of hurt
@@ -724,6 +812,7 @@ if __name__ == "__main__":
             'eradicators_built_right': eradicators_if_i_built_them_different,
             'eradicators_melta_built_right': eradicators_melta_if_i_built_them_different,
             'full_squad_eradicators': full_squad_eradicators,
+            'full_squad_eradicators2': full_squad_eradicators2,
             'full_squad_eradicators_melta' : full_squad_eradicators_melta,
             'redemptor_using_gun': the_other_redemptor_firing,
             'ven_brother_grammituis_using_gun': ven_brother_grammituis_firing,
