@@ -146,6 +146,12 @@ class Dice():
         if self.roll_count > 2:
             raise ValueError(f"Roll count reached {self.roll_count}, which is illegal")
         return self
+    
+    def __str__(self):
+        result = f"D{self.sides}"
+        if self.bias > 0:
+            result += f"+{self.bias}"
+        return result
 
 def determine_wound_roll(strength, toughness):
     if strength == toughness:
@@ -504,18 +510,23 @@ class DStat():
         
 class Model():
     def __init__(self, weapons, defence, pts="N/A", name="N/A"):
-        self.weapon = copy.deepcopy(weapons)
+        self.weapons = copy.deepcopy(weapons)
         self.defence = defence
         self.name = name
         self.pts = pts
 
     # TODO is this a bad idea?  Maybe!
     def __div__(self, other):
-        self.defence = self.defence * other
-        return self
+        result = copy.deepcopy(self)
+        result.defence = result.defence * other
+        return result
     def __mul__(self, other):
-        self.weapon = self.weapon * other
-        return self
+        result = copy.deepcopy(self)
+        try:
+            result.weapons = [wpn * other for wpn in result.weapons]
+        except Exception as e:
+            result.weapons = result.weapons * other
+        return result
     def __sub__(self, attacker):
         '''
             model - model
@@ -529,17 +540,28 @@ class Model():
             return self.defence - attacker.weapons
 
     def __str__(self):
-        return f"{self.name}({self.pts} pts):\n  {self.weapon}\n  {self.defence}"
+        result = f"{self.name}({self.pts} pts):"
+        for wpn in self.weapons:
+            result += f"\n  {wpn}"
+        result += f"\n  {self.defence}"
+        return result
 
 class Unit():
     def __init__(self, model_list):
         self.models = model_list
+        self.wounds = np.sum([mdl.defence.wounds for mdl in self.models])
+        self.points = np.sum([mdl.pts for mdl in self.models])
+
+    def __str__(self):
+        return f"{self.models[0]}"
 
     def __mul__(self, other):
         '''
             unit * modifier
         '''
-        self.models = [x * other for x in self.models]
+        result = copy.deepcopy(self)
+        result.models = [x * other for x in result.models]
+        return result
 
     def __sub__(self, other):
         '''
@@ -557,6 +579,9 @@ class Unit():
         if success is True:
             return acc
         return defending_model - model
+    
+    def _get_best_defender(self):
+        return self.models[0]
         
 
 
@@ -566,9 +591,10 @@ class Modifier():
         self.func = [functor]
 
     def __mul__(self, other):
-        self.seq += other.seq
-        self.func += other.func
-        return self
+        result = copy.deepcopy(self)
+        result.seq += other.seq
+        result.func += other.func
+        return result
 
 
     
@@ -716,7 +742,7 @@ if __name__ == "__main__":
         run_test()
     else:
         # The targets
-        leman_russ_tank = Model(
+        leman_russ_tank_model = Model(
             weapons=[
                 AStat(A=Dice(bias=3), BS_WS=4, S=10, AP=-1, D=3, description="Battle Cannon"),
                 AStat(A=Dice(sides=3), BS_WS=4, S=8, AP=-3, D=2, description="Plasma Cannon (supercharged)"),
@@ -725,17 +751,16 @@ if __name__ == "__main__":
             ], 
             defence=DStat(T=11, Sv=2, W=13), 
             pts=170, name="Leman Russ Battle Tank")
-        chimera = DStat(PTS=70, T=9, Sv=3, W=11, name="Chimera")
-        wraithguard = DStat(PTS=190/5, T=7, Sv=2, W=3, name="Wraithguard")
-        waveserpent = DStat(PTS=120, T=9, Sv=3, W=13, Inv=5, name="Wave Serpent")
-        guardsmen = DStat(PTS=60/10, T=3, Sv=5, W=1, name="Humble Guardsmen")
+        leman_russ_tank = Unit([leman_russ_tank_model])
+        # chimera = DStat(PTS=70, T=9, Sv=3, W=11, name="Chimera")
+        # wraithguard = DStat(PTS=190/5, T=7, Sv=2, W=3, name="Wraithguard")
+        # waveserpent = DStat(PTS=120, T=9, Sv=3, W=13, Inv=5, name="Wave Serpent")
+        # guardsmen = DStat(PTS=60/10, T=3, Sv=5, W=1, name="Humble Guardsmen")
+        chimera = DStat(T=9, Sv=3, W=11)
+        wraithguard = DStat(T=7, Sv=2, W=3)
+        waveserpent = DStat(T=9, Sv=3, W=13, Inv=5)
+        guardsmen = DStat(T=3, Sv=5, W=1)
 
-        terminator_on_the_d = DStat(PTS=185/5, T=5, Sv=2, Inv=4, W=3, name="Space Marine Terminator")
-        sword_bro_on_the_d = DStat(PTS=150/5, T=4, Sv=3, W=3, name="Primaris Sword Brethren")
-        aintercessor_on_the_d = DStat(PTS=75/5, T=4, Sv=3, W=2, name="Assault Intercessor")
-        neophyte_on_the_d = DStat(PTS=10, T=4, Sv=4, W=2, name="Primaris Neophyte")
-        eradicator_on_the_d = DStat(PTS=10, T=6, Sv=3, W=3, name="Eradicator")
-        redemptor_on_the_d = DStat(PTS=210, T=10, Sv=2, W=12, name="Redemptor Dreadnought")
 
         # Our vow
         TemplarVow = LethalHits
@@ -746,217 +771,211 @@ if __name__ == "__main__":
         # ==================================================================================== #
         #       The dreaded Wraithguard
         # ==================================================================================== #
-        elf_wraithguard_cannon = AStat(PTS=190/5, A=1, BS_WS=4, S=14, AP=-4, D=Dice()) * DevestatingWounds
-        elf_wraithguard_dscythe = AStat(PTS=190/5, A=1, BS_WS=4, S=10, AP=-4, D=1)
+        # elf_wraithguard_cannon = AStat(PTS=190/5, A=1, BS_WS=4, S=14, AP=-4, D=Dice()) * DevestatingWounds
+        # elf_wraithguard_dscythe = AStat(PTS=190/5, A=1, BS_WS=4, S=10, AP=-4, D=1)
 
         # Our boyz
         # ==================================================================================== #
         #       Characters
         # ==================================================================================== #
-        the_emperors_champion_strike = AStat(PTS=75, A=6, BS_WS=2, S=8, AP=-3, D=3)
-        chaplain_gregor_ironmaw = AStat(PTS=60+15, A=5, BS_WS=2, S=6, AP=-1, D=2) * PlusOneToWound * StrengthPlusOne * AP_PlusOne * AttacksPlusOne
-        apothecary_bio_gun = AStat(PTS=55+30, A=1, BS_WS=3, S=5, AP=-1, D=2)
+        # the_emperors_champion_strike = AStat(PTS=75, A=6, BS_WS=2, S=8, AP=-3, D=3)
+        # chaplain_gregor_ironmaw = AStat(PTS=60+15, A=5, BS_WS=2, S=6, AP=-1, D=2) * PlusOneToWound * StrengthPlusOne * AP_PlusOne * AttacksPlusOne
+        # apothecary_bio_gun = AStat(PTS=55+30, A=1, BS_WS=3, S=5, AP=-1, D=2)
 
-        characters = {
-            'the_emperors_champion_strike': [ the_emperors_champion_strike * TemplarVow ],
-            'chaplain_gregor_ironmaw': [ chaplain_gregor_ironmaw * TemplarVow ]
-        }
+        # characters = {
+        #     'the_emperors_champion_strike': [ the_emperors_champion_strike * TemplarVow ],
+        #     'chaplain_gregor_ironmaw': [ chaplain_gregor_ironmaw * TemplarVow ]
+        # }
 
         # ==================================================================================== #
         #       Ranged Boyz
         # ==================================================================================== #
+        BiologisFireDicipline = LethalHits * SustainedHits_1 * CriticalHit_5up
         TotalObliteration = RerollHits  * RerollWounds * Reroll_D6_Damage
-        melta_rifle = AStat(PTS=95/3, A=1, BS_WS=3, S=9, AP=-4, D=Dice())
-    # def __init__(self, PTS, T, Sv, W, Inv=None, FNP=None, name=None):
-        eradicator_firing_at_a_tank = AStat(PTS=95/3, A=1, BS_WS=3, S=9, AP=-4, D=Dice())  * TotalObliteration
-        eradicator_firing_at_a_tank_in_melta_range = AStat(PTS=95/3, A=1, BS_WS=3, S=9, AP=-4, D=Dice(bias=2))  * TotalObliteration
-        eradicator_multi_firing_at_a_tank = AStat(PTS=95/3, A=2, BS_WS=4, S=9, AP=-4, D=Dice())  * TotalObliteration
-        eradicator_multi_firing_at_a_tank_in_melta_range = AStat(PTS=95/3, A=2, BS_WS=4, S=9, AP=-4, D=Dice(bias=2))  * TotalObliteration
-        devastator_lascannon_not_moved = AStat(PTS=120/5, A=1, BS_WS=4, S=12, AP=-3, D=Dice(bias=1)) * PlusOneToHit
+        melta_rifle = AStat(A=1, BS_WS=3, S=9, AP=-4, D=Dice())
+        multi_melta = AStat(A=2, BS_WS=4, S=9, AP=-4, D=Dice())
+        melta_rifle_melta_range = AStat(A=1, BS_WS=3, S=9, AP=-4, D=Dice(bias=2))
+        multi_melta_melta_range = AStat(A=2, BS_WS=4, S=9, AP=-4, D=Dice(bias=2))
+        eradicator_gravis = DStat(T=6, Sv=3, W=3, description="Eradicator Gravis")
 
-        devastators = [copy.deepcopy(devastator_lascannon_not_moved) for _ in range(0,4)]
-
-        eradicators = [copy.deepcopy(eradicator_firing_at_a_tank) for _ in range(0,3)]
-        eradicators_melta = [copy.deepcopy(eradicator_firing_at_a_tank_in_melta_range) for _ in range(0,3)]
-        eradicators_if_i_built_them_different = [copy.deepcopy(eradicator_firing_at_a_tank) for _ in range(0,2)] + [copy.deepcopy(eradicator_multi_firing_at_a_tank) for _ in range(0,1)]
-        eradicators_melta_if_i_built_them_different = [copy.deepcopy(eradicator_firing_at_a_tank_in_melta_range) for _ in range(0,2)] + [copy.deepcopy(eradicator_multi_firing_at_a_tank_in_melta_range) for _ in range(0,1)]
-
-        full_squad_eradicators = [copy.deepcopy(eradicator_firing_at_a_tank) for _ in range(0,4)] + [copy.deepcopy(eradicator_multi_firing_at_a_tank) for _ in range(0,2)]
-        full_squad_eradicators2 = [copy.deepcopy(eradicator_firing_at_a_tank2) for _ in range(0,4)] + [copy.deepcopy(eradicator_multi_firing_at_a_tank) for _ in range(0,2)]
-        full_squad_eradicators_melta = [copy.deepcopy(eradicator_firing_at_a_tank_in_melta_range) for _ in range(0,4)] + [copy.deepcopy(eradicator_multi_firing_at_a_tank_in_melta_range) for _ in range(0,2)]
-
+        eradicators = Unit([
+            Model(weapons=melta_rifle, defence=eradicator_gravis, pts=95/3, name="Eradicator") * TotalObliteration,
+            Model(weapons=melta_rifle, defence=eradicator_gravis, pts=95/3, name="Eradicator") * TotalObliteration,
+            Model(weapons=multi_melta, defence=eradicator_gravis, pts=95/3, name="Eradicator") * TotalObliteration,
+        ])
+        full_squad_eradicators = Unit([
+            Model(weapons=melta_rifle, defence=eradicator_gravis, pts=95/3, name="Eradicator") * TotalObliteration,
+            Model(weapons=melta_rifle, defence=eradicator_gravis, pts=95/3, name="Eradicator") * TotalObliteration,
+            Model(weapons=melta_rifle, defence=eradicator_gravis, pts=95/3, name="Eradicator") * TotalObliteration,
+            Model(weapons=melta_rifle, defence=eradicator_gravis, pts=95/3, name="Eradicator") * TotalObliteration,
+            Model(weapons=multi_melta, defence=eradicator_gravis, pts=95/3, name="Eradicator") * TotalObliteration,
+            Model(weapons=multi_melta, defence=eradicator_gravis, pts=95/3, name="Eradicator") * TotalObliteration,
+        ])
         # Eradicators + Apothecary Biologis with Fire Discipline = A lot of hurt
-        full_eradicators_firedis_stack = mod_squad(mod_squad(mod_squad(add_unit(full_squad_eradicators, apothecary_bio_gun), LethalHits), SustainedHits_1), CriticalHit_5up)
-        full_eradicators_melta_firedis_stack = mod_squad(mod_squad(mod_squad(add_unit(full_squad_eradicators_melta, apothecary_bio_gun), LethalHits), SustainedHits_1), CriticalHit_5up)
+        full_eradicators_firedis_stack = full_squad_eradicators * BiologisFireDicipline
 
-        blastadd = 0
-        # Venerable Brother Grammituis has 3 gun
-        ven_brother_grammituis_firing = [
-            AStat(PTS=210/3, A=Dice(), BS_WS=3, S=5, AP=-1, D=1) * Torrent, # heavy flamer
-            AStat(PTS=210/3, A=12, BS_WS=3, S=6, AP=0, D=1) * DevestatingWounds, # heavy onslaught gatling cannon
-            AStat(PTS=210/3, A=Dice(bias=blastadd), BS_WS=3, S=4, AP=0, D=1) * TwinLinked, # twin fragstorm grenade launcher
-        ] 
+        # blastadd = 0
+        # # Venerable Brother Grammituis has 3 gun
+        # ven_brother_grammituis_firing = [
+        #     AStat(PTS=210/3, A=Dice(), BS_WS=3, S=5, AP=-1, D=1) * Torrent, # heavy flamer
+        #     AStat(PTS=210/3, A=12, BS_WS=3, S=6, AP=0, D=1) * DevestatingWounds, # heavy onslaught gatling cannon
+        #     AStat(PTS=210/3, A=Dice(bias=blastadd), BS_WS=3, S=4, AP=0, D=1) * TwinLinked, # twin fragstorm grenade launcher
+        # ] 
 
-        # The other dread has 4 gun
-        the_other_redemptor_firing = [
-            AStat(PTS=210/4, A=Dice(), BS_WS=3, S=5, AP=-1, D=1) * Torrent, # heavy flamer
-            AStat(PTS=210/4, A=Dice(bias=blastadd), BS_WS=3, S=4, AP=0, D=1) * TwinLinked, # twin fragstorm grenade launcher
-            AStat(PTS=210/4, A=Dice(bias=1+blastadd), BS_WS=3, S=9, AP=-4, D=3), # macro plasma incinerator
-            AStat(PTS=210/4, A=Dice(sides=3), BS_WS=3, S=8, AP=-1, D=2), # icarus rocket pod
-        ]
+        # # The other dread has 4 gun
+        # the_other_redemptor_firing = [
+        #     AStat(PTS=210/4, A=Dice(), BS_WS=3, S=5, AP=-1, D=1) * Torrent, # heavy flamer
+        #     AStat(PTS=210/4, A=Dice(bias=blastadd), BS_WS=3, S=4, AP=0, D=1) * TwinLinked, # twin fragstorm grenade launcher
+        #     AStat(PTS=210/4, A=Dice(bias=1+blastadd), BS_WS=3, S=9, AP=-4, D=3), # macro plasma incinerator
+        #     AStat(PTS=210/4, A=Dice(sides=3), BS_WS=3, S=8, AP=-1, D=2), # icarus rocket pod
+        # ]
 
         ranged_boyz = {
-            'devastators': devastators,
             'eradicators': eradicators,
-            'eradicators_melta': eradicators_melta,
-            'eradicators_built_right': eradicators_if_i_built_them_different,
-            'eradicators_melta_built_right': eradicators_melta_if_i_built_them_different,
             'full_squad_eradicators': full_squad_eradicators,
-            'full_squad_eradicators2': full_squad_eradicators2,
-            'full_squad_eradicators_melta' : full_squad_eradicators_melta,
-            'redemptor_using_gun': the_other_redemptor_firing,
-            'ven_brother_grammituis_using_gun': ven_brother_grammituis_firing,
-            # 'full_eradicators_firedis_stack': full_eradicators_firedis_stack,
-            # 'full_eradicators_melta_firedis_stack': full_eradicators_melta_firedis_stack,
+            # 'redemptor_using_gun': the_other_redemptor_firing,
+            # 'ven_brother_grammituis_using_gun': ven_brother_grammituis_firing,
+            'full_eradicators_firedis_stack': full_eradicators_firedis_stack,
+            'leman_russ': leman_russ_tank,
         }
 
         # ==================================================================================== #
         #       Redemptor Fists
         # ==================================================================================== #
-        redemptor_claw = [ AStat(PTS=210, A=Dice(), BS_WS=3, S=5, AP=-1, D=1) * TemplarVow ]
-        brutalis_redemptor_talons_strike = [ AStat(PTS=160, A=6, BS_WS=3, S=12, AP=-2, D=3) * TemplarVow * TwinLinked]
-        brutalis_redemptor_talons_sweep = [ AStat(PTS=160, A=10, BS_WS=3, S=7, AP=-2, D=1) * TemplarVow * TwinLinked]
-        redemptor_claw_wrath = mod_squad(mod_squad(redemptor_claw, AP_PlusOne), StrengthPlusOne)
-        brutalis_redemptor_talons_strike_wrath = mod_squad(mod_squad(brutalis_redemptor_talons_strike, AP_PlusOne), StrengthPlusOne)
-        brutalis_redemptor_talons_sweep_wrath = mod_squad(mod_squad(brutalis_redemptor_talons_sweep, AP_PlusOne), StrengthPlusOne)
+        # redemptor_claw = [ AStat(PTS=210, A=Dice(), BS_WS=3, S=5, AP=-1, D=1) * TemplarVow ]
+        # brutalis_redemptor_talons_strike = [ AStat(PTS=160, A=6, BS_WS=3, S=12, AP=-2, D=3) * TemplarVow * TwinLinked]
+        # brutalis_redemptor_talons_sweep = [ AStat(PTS=160, A=10, BS_WS=3, S=7, AP=-2, D=1) * TemplarVow * TwinLinked]
+        # redemptor_claw_wrath = mod_squad(mod_squad(redemptor_claw, AP_PlusOne), StrengthPlusOne)
+        # brutalis_redemptor_talons_strike_wrath = mod_squad(mod_squad(brutalis_redemptor_talons_strike, AP_PlusOne), StrengthPlusOne)
+        # brutalis_redemptor_talons_sweep_wrath = mod_squad(mod_squad(brutalis_redemptor_talons_sweep, AP_PlusOne), StrengthPlusOne)
 
-        redemptor_boyz = {
-            'redemptor_claw': redemptor_claw,
-            'redemptor_claw_wrath': redemptor_claw_wrath,
-            'brutalis_redemptor_talons_strike': brutalis_redemptor_talons_strike,
-            'brutalis_redemptor_talons_strike_wrath': brutalis_redemptor_talons_strike_wrath,
-            'brutalis_redemptor_talons_sweep': brutalis_redemptor_talons_sweep,
-            'brutalis_redemptor_talons_sweep_wrath': brutalis_redemptor_talons_sweep_wrath,
-        }
+        # redemptor_boyz = {
+        #     'redemptor_claw': redemptor_claw,
+        #     'redemptor_claw_wrath': redemptor_claw_wrath,
+        #     'brutalis_redemptor_talons_strike': brutalis_redemptor_talons_strike,
+        #     'brutalis_redemptor_talons_strike_wrath': brutalis_redemptor_talons_strike_wrath,
+        #     'brutalis_redemptor_talons_sweep': brutalis_redemptor_talons_sweep,
+        #     'brutalis_redemptor_talons_sweep_wrath': brutalis_redemptor_talons_sweep_wrath,
+        # }
 
         # ==================================================================================== #
         #       Sword Brethern
         # ==================================================================================== #
-        primaris_sword_brother_with_chainsword = AStat(PTS=150/5, A=5, BS_WS=3, S=4, AP=-1, D=1) * DamagePlusOne
-        primaris_sword_brother_with_powerweapon = AStat(PTS=150/5, A=4, BS_WS=3, S=5, AP=-2, D=1) * DamagePlusOne
-        primaris_sword_brother_with_thunderhammer = AStat(PTS=150/5, A=3, BS_WS=4, S=8, AP=-2, D=2) * DevestatingWounds * DamagePlusOne
-        primaris_sword_brother_with_lclaws = AStat(PTS=150/5, A=5, BS_WS=3, S=5, AP=-2, D=1) * TwinLinked  * DamagePlusOne
-        primaris_castellan_with_mastercraft_psword = AStat(PTS=150/5, A=4, BS_WS=2, S=5, AP=-2, D=2) * DamagePlusOne
+        # primaris_sword_brother_with_chainsword = AStat(PTS=150/5, A=5, BS_WS=3, S=4, AP=-1, D=1) * DamagePlusOne
+        # primaris_sword_brother_with_powerweapon = AStat(PTS=150/5, A=4, BS_WS=3, S=5, AP=-2, D=1) * DamagePlusOne
+        # primaris_sword_brother_with_thunderhammer = AStat(PTS=150/5, A=3, BS_WS=4, S=8, AP=-2, D=2) * DevestatingWounds * DamagePlusOne
+        # primaris_sword_brother_with_lclaws = AStat(PTS=150/5, A=5, BS_WS=3, S=5, AP=-2, D=1) * TwinLinked  * DamagePlusOne
+        # primaris_castellan_with_mastercraft_psword = AStat(PTS=150/5, A=4, BS_WS=2, S=5, AP=-2, D=2) * DamagePlusOne
 
-        sword_brethern = [
-            primaris_sword_brother_with_powerweapon * TemplarVow, 
-            primaris_sword_brother_with_thunderhammer * TemplarVow, 
-            primaris_sword_brother_with_powerweapon * TemplarVow, 
-            primaris_sword_brother_with_lclaws * TemplarVow,
-            primaris_castellan_with_mastercraft_psword * TemplarVow
-            ]
-        super_sword_brethern = add_unit(sword_brethern, the_emperors_champion_strike * TemplarVow * DamagePlusOne)
-        super_sword_brethern_crusaders_wrath = mod_squad(mod_squad(super_sword_brethern, AP_PlusOne), StrengthPlusOne)
+        # sword_brethern = [
+        #     primaris_sword_brother_with_powerweapon * TemplarVow, 
+        #     primaris_sword_brother_with_thunderhammer * TemplarVow, 
+        #     primaris_sword_brother_with_powerweapon * TemplarVow, 
+        #     primaris_sword_brother_with_lclaws * TemplarVow,
+        #     primaris_castellan_with_mastercraft_psword * TemplarVow
+        #     ]
+        # super_sword_brethern = add_unit(sword_brethern, the_emperors_champion_strike * TemplarVow * DamagePlusOne)
+        # super_sword_brethern_crusaders_wrath = mod_squad(mod_squad(super_sword_brethern, AP_PlusOne), StrengthPlusOne)
 
-        sword_bros_dict = {
-            'sword_brethern': sword_brethern,
-            'super_sword_brethern': super_sword_brethern,
-            'super_sword_brethern_crusaders_wrath': super_sword_brethern_crusaders_wrath 
-        }
+        # sword_bros_dict = {
+        #     'sword_brethern': sword_brethern,
+        #     'super_sword_brethern': super_sword_brethern,
+        #     'super_sword_brethern_crusaders_wrath': super_sword_brethern_crusaders_wrath 
+        # }
 
         # ==================================================================================== #
         #       Assault Intercessors
         # ==================================================================================== #
-        assault_intercessor = AStat(PTS=75/5, A=4, BS_WS=3, S=4, AP=-1, D=1) * RerollWoundsOne
+        # assault_intercessor = AStat(PTS=75/5, A=4, BS_WS=3, S=4, AP=-1, D=1) * RerollWoundsOne
 
-        assault_intercessors = [assault_intercessor*TemplarVow for _ in range(0,10)]
-        super_ai = add_unit(mod_squad(assault_intercessors, PlusOneToWound), chaplain_gregor_ironmaw * TemplarVow * RerollWoundsOne)
-        super_ai_crusaders_wrath = mod_squad(mod_squad(super_ai, AP_PlusOne), StrengthPlusOne)
+        # assault_intercessors = [assault_intercessor*TemplarVow for _ in range(0,10)]
+        # super_ai = add_unit(mod_squad(assault_intercessors, PlusOneToWound), chaplain_gregor_ironmaw * TemplarVow * RerollWoundsOne)
+        # super_ai_crusaders_wrath = mod_squad(mod_squad(super_ai, AP_PlusOne), StrengthPlusOne)
 
-        assault_inter_dict = {
-            'assault_intercessors': assault_intercessors,
-            'super_ai': super_ai,
-            'super_ai_crusaders_wrath': super_ai_crusaders_wrath
-        }
+        # assault_inter_dict = {
+        #     'assault_intercessors': assault_intercessors,
+        #     'super_ai': super_ai,
+        #     'super_ai_crusaders_wrath': super_ai_crusaders_wrath
+        # }
 
         # ==================================================================================== #
         #       Primaris Crusader Squad
         # ==================================================================================== #
-        primaris_neophyte_w_chainsword = AStat(PTS=140/10, A=5, BS_WS=3, S=4, AP=-1, D=1)
-        primaris_initiate_w_chainsword = AStat(PTS=140/10, A=5, BS_WS=3, S=4, AP=-1, D=1)
-        primaris_initiate_w_power_fist = AStat(PTS=140/10, A=3, BS_WS=3, S=8, AP=-2, D=2)
-        primaris_sword_brother_w_powerweapons = AStat(PTS=140/10, A=3, BS_WS=3, S=5, AP=-2, D=1)
+        # primaris_neophyte_w_chainsword = AStat(PTS=140/10, A=5, BS_WS=3, S=4, AP=-1, D=1)
+        # primaris_initiate_w_chainsword = AStat(PTS=140/10, A=5, BS_WS=3, S=4, AP=-1, D=1)
+        # primaris_initiate_w_power_fist = AStat(PTS=140/10, A=3, BS_WS=3, S=8, AP=-2, D=2)
+        # primaris_sword_brother_w_powerweapons = AStat(PTS=140/10, A=3, BS_WS=3, S=5, AP=-2, D=1)
 
-        pri_crusaders = [
-            primaris_neophyte_w_chainsword * TemplarVow,
-            primaris_neophyte_w_chainsword * TemplarVow,
-            primaris_neophyte_w_chainsword * TemplarVow,
-            primaris_neophyte_w_chainsword * TemplarVow,
-            primaris_initiate_w_chainsword * TemplarVow,
-            primaris_initiate_w_chainsword * TemplarVow,
-            primaris_initiate_w_chainsword * TemplarVow,
-            primaris_initiate_w_power_fist * TemplarVow,
-            primaris_initiate_w_power_fist * TemplarVow,
-            primaris_sword_brother_w_powerweapons * TemplarVow
-        ]
-        pri_crusaders_w_gregor = add_unit(mod_squad(pri_crusaders, PlusOneToWound), chaplain_gregor_ironmaw * TemplarVow)
-        pri_crusaders_w_gregor_wrath = mod_squad(mod_squad(pri_crusaders_w_gregor, AP_PlusOne), StrengthPlusOne)
+        # pri_crusaders = [
+        #     primaris_neophyte_w_chainsword * TemplarVow,
+        #     primaris_neophyte_w_chainsword * TemplarVow,
+        #     primaris_neophyte_w_chainsword * TemplarVow,
+        #     primaris_neophyte_w_chainsword * TemplarVow,
+        #     primaris_initiate_w_chainsword * TemplarVow,
+        #     primaris_initiate_w_chainsword * TemplarVow,
+        #     primaris_initiate_w_chainsword * TemplarVow,
+        #     primaris_initiate_w_power_fist * TemplarVow,
+        #     primaris_initiate_w_power_fist * TemplarVow,
+        #     primaris_sword_brother_w_powerweapons * TemplarVow
+        # ]
+        # pri_crusaders_w_gregor = add_unit(mod_squad(pri_crusaders, PlusOneToWound), chaplain_gregor_ironmaw * TemplarVow)
+        # pri_crusaders_w_gregor_wrath = mod_squad(mod_squad(pri_crusaders_w_gregor, AP_PlusOne), StrengthPlusOne)
 
-        pri_cru_dict = {
-            'pri_crusaders': pri_crusaders,
-            'pri_crusaders_w_gregor': pri_crusaders_w_gregor,
-            'pri_crusaders_w_gregor_wrath': pri_crusaders_w_gregor_wrath
-        }
+        # pri_cru_dict = {
+        #     'pri_crusaders': pri_crusaders,
+        #     'pri_crusaders_w_gregor': pri_crusaders_w_gregor,
+        #     'pri_crusaders_w_gregor_wrath': pri_crusaders_w_gregor_wrath
+        # }
 
         # ==================================================================================== #
         #       Terminator Assault Squad
         # ==================================================================================== #
-        assault_termie_with_hammer_shield = AStat(PTS=185/5, A=3, BS_WS=4, S=8, AP=-2, D=2) * DevestatingWounds
-        assault_termie_with_lclaws = AStat(PTS=185/5, A=5, BS_WS=3, S=5, AP=-2, D=1) * TwinLinked
+        # assault_termie_with_hammer_shield = AStat(PTS=185/5, A=3, BS_WS=4, S=8, AP=-2, D=2) * DevestatingWounds
+        # assault_termie_with_lclaws = AStat(PTS=185/5, A=5, BS_WS=3, S=5, AP=-2, D=1) * TwinLinked
 
-        assault_termies_0_5 = [
-            assault_termie_with_lclaws * TemplarVow ,
-            assault_termie_with_lclaws * TemplarVow ,
-            assault_termie_with_lclaws * TemplarVow ,
-            assault_termie_with_lclaws * TemplarVow ,
-            assault_termie_with_lclaws * TemplarVow ,
-        ]
-        assault_termies_0_5_wrath = mod_squad(mod_squad(assault_termies_0_5, AP_PlusOne), StrengthPlusOne)
-        assault_termies_5_0 = [
-            assault_termie_with_hammer_shield * TemplarVow ,
-            assault_termie_with_hammer_shield * TemplarVow ,
-            assault_termie_with_hammer_shield * TemplarVow ,
-            assault_termie_with_hammer_shield * TemplarVow ,
-            assault_termie_with_hammer_shield * TemplarVow ,
-        ]
-        assault_termies_5_0_wrath = mod_squad(mod_squad(assault_termies_5_0, AP_PlusOne), StrengthPlusOne)
-        assault_termies_3_2 = [
-            assault_termie_with_hammer_shield * TemplarVow ,
-            assault_termie_with_hammer_shield * TemplarVow ,
-            assault_termie_with_hammer_shield * TemplarVow ,
-            assault_termie_with_lclaws * TemplarVow ,
-            assault_termie_with_lclaws * TemplarVow ,
-        ]
-        assault_termies_3_2_wrath = mod_squad(mod_squad(assault_termies_3_2, AP_PlusOne), StrengthPlusOne)
-        assault_termies_2_3 = [
-            assault_termie_with_hammer_shield * TemplarVow ,
-            assault_termie_with_hammer_shield * TemplarVow ,
-            assault_termie_with_lclaws * TemplarVow ,
-            assault_termie_with_lclaws * TemplarVow ,
-            assault_termie_with_lclaws * TemplarVow ,
-        ]
-        assault_termies_2_3_wrath = mod_squad(mod_squad(assault_termies_2_3, AP_PlusOne), StrengthPlusOne)
+        # assault_termies_0_5 = [
+        #     assault_termie_with_lclaws * TemplarVow ,
+        #     assault_termie_with_lclaws * TemplarVow ,
+        #     assault_termie_with_lclaws * TemplarVow ,
+        #     assault_termie_with_lclaws * TemplarVow ,
+        #     assault_termie_with_lclaws * TemplarVow ,
+        # ]
+        # assault_termies_0_5_wrath = mod_squad(mod_squad(assault_termies_0_5, AP_PlusOne), StrengthPlusOne)
+        # assault_termies_5_0 = [
+        #     assault_termie_with_hammer_shield * TemplarVow ,
+        #     assault_termie_with_hammer_shield * TemplarVow ,
+        #     assault_termie_with_hammer_shield * TemplarVow ,
+        #     assault_termie_with_hammer_shield * TemplarVow ,
+        #     assault_termie_with_hammer_shield * TemplarVow ,
+        # ]
+        # assault_termies_5_0_wrath = mod_squad(mod_squad(assault_termies_5_0, AP_PlusOne), StrengthPlusOne)
+        # assault_termies_3_2 = [
+        #     assault_termie_with_hammer_shield * TemplarVow ,
+        #     assault_termie_with_hammer_shield * TemplarVow ,
+        #     assault_termie_with_hammer_shield * TemplarVow ,
+        #     assault_termie_with_lclaws * TemplarVow ,
+        #     assault_termie_with_lclaws * TemplarVow ,
+        # ]
+        # assault_termies_3_2_wrath = mod_squad(mod_squad(assault_termies_3_2, AP_PlusOne), StrengthPlusOne)
+        # assault_termies_2_3 = [
+        #     assault_termie_with_hammer_shield * TemplarVow ,
+        #     assault_termie_with_hammer_shield * TemplarVow ,
+        #     assault_termie_with_lclaws * TemplarVow ,
+        #     assault_termie_with_lclaws * TemplarVow ,
+        #     assault_termie_with_lclaws * TemplarVow ,
+        # ]
+        # assault_termies_2_3_wrath = mod_squad(mod_squad(assault_termies_2_3, AP_PlusOne), StrengthPlusOne)
             
-        terminator_assault_sqd_dict = {
-            'assault_termies_5_0': assault_termies_5_0,
-            'assault_termies_5_0_wrath': assault_termies_5_0_wrath,
-            'assault_termies_0_5': assault_termies_0_5,
-            'assault_termies_0_5_wrath': assault_termies_0_5_wrath,
-            'assault_termies_2_3': assault_termies_2_3,
-            'assault_termies_2_3_wrath': assault_termies_2_3_wrath,
-            'assault_termies_3_2': assault_termies_3_2,
-            'assault_termies_3_2_wrath': assault_termies_3_2_wrath
-        }
+        # terminator_assault_sqd_dict = {
+        #     'assault_termies_5_0': assault_termies_5_0,
+        #     'assault_termies_5_0_wrath': assault_termies_5_0_wrath,
+        #     'assault_termies_0_5': assault_termies_0_5,
+        #     'assault_termies_0_5_wrath': assault_termies_0_5_wrath,
+        #     'assault_termies_2_3': assault_termies_2_3,
+        #     'assault_termies_2_3_wrath': assault_termies_2_3_wrath,
+        #     'assault_termies_3_2': assault_termies_3_2,
+        #     'assault_termies_3_2_wrath': assault_termies_3_2_wrath
+        # }
 
         # ==================================================================================== #
         #       Statistical Reports
@@ -969,20 +988,15 @@ if __name__ == "__main__":
             'wraithguard': wraithguard,
             'waveserpent': waveserpent,
             'guardsmen': guardsmen,
-            'terminator': terminator_on_the_d,
-            'sword_bro': sword_bro_on_the_d,
-            'intercessor': aintercessor_on_the_d,
-            'neophyte': neophyte_on_the_d,
-            'eradicator': eradicator_on_the_d,
         }
         ATTACKER_OPTIONS = {
-            'termies': terminator_assault_sqd_dict,
-            'pri_crusaders': pri_cru_dict,
-            'a_inter': assault_inter_dict,
-            'sword_bros': sword_bros_dict,
+            # 'termies': terminator_assault_sqd_dict,
+            # 'pri_crusaders': pri_cru_dict,
+            # 'a_inter': assault_inter_dict,
+            # 'sword_bros': sword_bros_dict,
             'ranged': ranged_boyz,
-            'chars': characters,
-            'redemptor_boyz': redemptor_boyz,
+            # 'chars': characters,
+            # 'redemptor_boyz': redemptor_boyz,
         }
         
         par = argparse.ArgumentParser(description='Warhammer 40k 10th Ed. Math Hammer')
@@ -1012,7 +1026,7 @@ if __name__ == "__main__":
 
             # sum the points for each side
             def_points = the_target.points
-            att_points = np.sum([x.points for x in the_list[k]])
+            att_points = the_list[k].points
             # potential relative to point cost
             points_per_damage = att_points / very_likely_damage_output
             
