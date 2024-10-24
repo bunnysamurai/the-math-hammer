@@ -2,11 +2,12 @@
 
 import random
 import numpy as np
-import numbers
 import copy
 import matplotlib.pyplot as plt
 import argparse
 from enum import Enum
+import scipy
+import scipy.stats
 
 class CharState(Enum):
     DiceList = 1
@@ -553,7 +554,7 @@ class Model():
         return handle_model(attacker)
 
     def __str__(self):
-        result = f"{self.name}({self.points} pts):"
+        result = f"{self.name}({self.points:0.2f} pts):"
         try:
             for wpn in self.weapons:
                 result += f"\n  {wpn}"
@@ -564,8 +565,14 @@ class Model():
 
 class Unit():
     def __init__(self, model_list):
+        '''
+            unit_wounds is the total amount of wounds this unit has
+            wounds is the **majority** wounds characteristic among models in the unit
+        '''
         self.models = model_list
-        self.wounds = np.sum([mdl.defence.wounds for mdl in self.models])
+        self.unit_wounds = np.sum([mdl.defence.wounds for mdl in self.models])
+        mode, _ = scipy.stats.mode([mdl.defence.wounds for mdl in self.models])
+        self.wounds = np.max(mode)
         self.points = np.sum([mdl.points for mdl in self.models])
 
     def __str__(self):
@@ -713,6 +720,13 @@ def add_unit(squad, unit):
 #       TESTS ONLY
 # =================================================================================== #
 def run_test():
+    # run unit tests
+    dmg_seq = [1, 2, 1, 2, 3, 4]
+    target = DStat(T=1, Sv=1, W=4)
+    cdf_rounds, cdf_removed = fold_to_models_removed_stats(dmg_seq, target)
+    print(cdf_removed)
+
+
     # run system tests
     ATTACKS = 1
     SKILL = 4
@@ -825,30 +839,55 @@ if __name__ == "__main__":
         wraithguard_scythe = Unit([wraithguard_model_dscythe for _ in range(0,10)])
 
         # waveserpent = DStat(PTS=120, T=9, Sv=3, W=13, Inv=5, name="Wave Serpent")
-        waveserpent = DStat(T=9, Sv=3, W=13, Inv=5)
+        waveserpent = Model(
+            weapons=[
+                AStat(A=1, BS_WS=3, S=12, AP=-3, D=Dice(bias=2), description="Twin Bright Lance") * TwinLinked,
+                AStat(A=3, BS_WS=3, S=6, AP=-1, D=2, description="Shuriken Cannon") * SustainedHits_1,
+            ],
+            defence=DStat(T=9, Sv=3, W=13, Inv=5),
+            pts=120, name="Wave Serpent"
+        )
 
 
-        # Our vow
-        TemplarVow = LethalHits
-        # TemplarVow = SustainedHits_1
 
-
-        # Their boyz
-        # elf_wraithguard_cannon = AStat(PTS=190/5, A=1, BS_WS=4, S=14, AP=-4, D=Dice()) * DevestatingWounds
-        # elf_wraithguard_dscythe = AStat(PTS=190/5, A=1, BS_WS=4, S=10, AP=-4, D=1)
 
         # Our boyz
         # ==================================================================================== #
-        #       Characters
+        #      Melee Boyz 
         # ==================================================================================== #
-        # the_emperors_champion_strike = AStat(PTS=75, A=6, BS_WS=2, S=8, AP=-3, D=3)
-        # chaplain_gregor_ironmaw = AStat(PTS=60+15, A=5, BS_WS=2, S=6, AP=-1, D=2) * PlusOneToWound * StrengthPlusOne * AP_PlusOne * AttacksPlusOne
+        # Our vow
+        # TemplarVow = SustainedHits_1
+        TemplarVow = LethalHits
+
+
+        the_emperors_champion_sweep = Model(
+            weapons=AStat(A=10, BS_WS=2, S=6, AP=-2, D=1, description="Black Sword (Sweep)"),
+            defence=DStat(T=4, Sv=2, W=5, Inv=4, description="Black Plate"),
+            pts=75, name="The Emperor's Champion (Sweeping)"
+        ) * TemplarVow
+        the_emperors_champion_strike = Model(
+            weapons=AStat(A=6, BS_WS=2, S=8, AP=-3, D=3, description="Black Sword (Strike)"),
+            defence=DStat(T=4, Sv=2, W=5, Inv=4, description="Black Plate"),
+            pts=75, name="The Emperor's Champion (Striking)"
+        ) * TemplarVow
+
+        chaplain_gregor_ironmaw = Model(
+            weapons=AStat(A=5, BS_WS=2, S=6, AP=-1, D=2, description="Crozius Arcanum with Perdition's Edge") * PlusOneToWound * StrengthPlusOne * AP_PlusOne * AttacksPlusOne,
+            defence=DStat(T=4, Sv=3, W=4, Inv=4),
+            pts=60+15, name="Chaplain Gregor Ironmaw the Orc Slayer"
+        ) * TemplarVow
         # apothecary_bio_gun = AStat(PTS=55+30, A=1, BS_WS=3, S=5, AP=-1, D=2)
+
 
         # characters = {
         #     'the_emperors_champion_strike': [ the_emperors_champion_strike * TemplarVow ],
         #     'chaplain_gregor_ironmaw': [ chaplain_gregor_ironmaw * TemplarVow ]
         # }
+        melee_boyz = {
+            'the_emperors_champion_strike': the_emperors_champion_strike,
+            'the_emperors_champion_sweep': the_emperors_champion_sweep,
+            'chaplain_gregor_ironmaw': chaplain_gregor_ironmaw,
+        }
 
         # ==================================================================================== #
         #       Ranged Boyz
@@ -880,29 +919,35 @@ if __name__ == "__main__":
         full_eradicators_firedis_stack = full_squad_eradicators * BiologisFireDicipline
         full_eradicators_firedis_stack_at_vehicle = full_squad_eradicators_at_vehicle * BiologisFireDicipline
 
-        # blastadd = 0
-        # # Venerable Brother Grammituis has 3 gun
-        # ven_brother_grammituis_firing = [
-        #     AStat(PTS=210/3, A=Dice(), BS_WS=3, S=5, AP=-1, D=1) * Torrent, # heavy flamer
-        #     AStat(PTS=210/3, A=12, BS_WS=3, S=6, AP=0, D=1) * DevestatingWounds, # heavy onslaught gatling cannon
-        #     AStat(PTS=210/3, A=Dice(bias=blastadd), BS_WS=3, S=4, AP=0, D=1) * TwinLinked, # twin fragstorm grenade launcher
-        # ] 
+        blastadd = 0
+        ven_brother_grammituis = Model(
+            weapons=[
+                AStat(A=Dice(), BS_WS=3, S=5, AP=-1, D=1, description="Heavy Flamer") * Torrent,
+                AStat(A=12, BS_WS=3, S=6, AP=0, D=1, description="Heavy Onslaught Gatling Cannon") * DevestatingWounds,
+                AStat(A=Dice(bias=blastadd), BS_WS=3, S=4, AP=0, D=1, description="Twin Fragstorm Grenade Launcher") * TwinLinked,
+            ],
+            defence=DStat(T=10, Sv=2, W=12),
+            pts=210, name="Venerable Brother Grammituis"
+        )
 
-        # # The other dread has 4 gun
-        # the_other_redemptor_firing = [
-        #     AStat(PTS=210/4, A=Dice(), BS_WS=3, S=5, AP=-1, D=1) * Torrent, # heavy flamer
-        #     AStat(PTS=210/4, A=Dice(bias=blastadd), BS_WS=3, S=4, AP=0, D=1) * TwinLinked, # twin fragstorm grenade launcher
-        #     AStat(PTS=210/4, A=Dice(bias=1+blastadd), BS_WS=3, S=9, AP=-4, D=3), # macro plasma incinerator
-        #     AStat(PTS=210/4, A=Dice(sides=3), BS_WS=3, S=8, AP=-1, D=2), # icarus rocket pod
-        # ]
+        redemptor_dread = Model(
+            weapons=[
+                AStat(A=Dice(), BS_WS=3, S=5, AP=-1, D=1, description="Heavy Flamer") * Torrent,
+                AStat(A=Dice(bias=blastadd), BS_WS=3, S=4, AP=0, D=1, description="Twin Fragstorm Grenade Launcher") * TwinLinked,
+                AStat(A=Dice(bias=1+blastadd), BS_WS=3, S=9, AP=-4, D=3, description="Macro Plasma Incinerator"),
+                AStat(A=Dice(sides=3), BS_WS=3, S=8, AP=-1, D=2, description="Icarus Rocket Pod"),
+            ],
+            defence=DStat(T=10, Sv=2, W=12),
+            pts=210, name="Redemptor Dreadnought"
+        )
 
         ranged_boyz = {
             'eradicators': eradicators,
             'eradicators_at_vehicle': eradicators_at_vehicle,
             'full_squad_eradicators': full_squad_eradicators,
             'full_squad_eradicators_at_vehicle': full_squad_eradicators_at_vehicle,
-            # 'redemptor_using_gun': the_other_redemptor_firing,
-            # 'ven_brother_grammituis_using_gun': ven_brother_grammituis_firing,
+            'redemptor_dread': redemptor_dread,
+            'ven_brother_grammituis': ven_brother_grammituis,
             'full_eradicators_firedis_stack': full_eradicators_firedis_stack,
             'leman_russ': leman_russ_tank,
             'wraithguard_cannon': wraithguard_cannon,
@@ -1062,6 +1107,8 @@ if __name__ == "__main__":
             'waveserpent': waveserpent,
             'guardsmen': guardsmen,
             'eradicators': eradicators,
+            'redemptor_dread': redemptor_dread,
+            'ven_brother_grammituis': ven_brother_grammituis,
         }
         ATTACKER_OPTIONS = {
             # 'termies': terminator_assault_sqd_dict,
@@ -1069,6 +1116,7 @@ if __name__ == "__main__":
             # 'a_inter': assault_inter_dict,
             # 'sword_bros': sword_bros_dict,
             'ranged': ranged_boyz,
+            'melee': melee_boyz,
             # 'chars': characters,
             # 'redemptor_boyz': redemptor_boyz,
         }
@@ -1094,8 +1142,6 @@ if __name__ == "__main__":
                 xdata = np.asarray([ float(x) for x in range(0,len(data)) ])
                 return np.interp(thresh, data[::-1], xdata[::-1])
 
-            # xdata = np.asarray([ float(x) for x in range(0,len(data)) ])
-            # likelyhood_of_kill = np.interp(the_target.wounds, xdata, data)
             very_likely_damage_output = compute_likelihood_value(data, VERY_LIKELY)
             expected_damage_output = compute_likelihood_value(data, 0.5)
 
