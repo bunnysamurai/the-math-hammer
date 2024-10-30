@@ -256,7 +256,7 @@ class AttackSequenceState():
         return self.char['skill']
 
     def _determine_fnp_threshold(self):
-        return 42 if self.char['fnp'] is None else self.char['fnp']
+        return self.char['fnp']
 
     def _determine_wound_threshold(self):
         T = self.threshold['toughness']
@@ -390,15 +390,19 @@ def create_standard_attack_modifier_sequence():
                 return np.asarray([item])
 
         # count up the number of fails
-        roll_status = listify(state.roll['fnp'].value) < state.determine_threshold('fnp') 
-        unmod_roll_is_1_status = listify(state.scratch['unmodified_roll'].value) == 1
-        defender_fnp_fails = roll_status + unmod_roll_is_1_status
-        damage_tally = np.sum(defender_fnp_fails == True)
+        thresh = state.determine_threshold('fnp') 
+        rolls = listify(state.roll['fnp'].value)
+        if thresh is not None:
+            roll_status = rolls < thresh
+            unmod_roll_is_1_status = listify(state.scratch['unmodified_roll'].value) == 1
+            defender_fnp_fails = roll_status + unmod_roll_is_1_status
+            damage_tally = np.sum(defender_fnp_fails == True)
+        else:
+            damage_tally = len(rolls)
 
         # of course, we can only do as much damage as there are wounds on the target
         target_wounds = state.char['wounds']
         state.pool['fnp'].append(min(target_wounds, damage_tally))
-        # state.pool['fnp'].append(damage_tally)
 
         return state
 
@@ -967,7 +971,7 @@ if __name__ == "__main__":
         full_eradicators_firedis_stack = full_squad_eradicators * BiologisFireDicipline
         full_eradicators_firedis_stack_at_vehicle = full_squad_eradicators_at_vehicle * BiologisFireDicipline
 
-        blastadd = 1
+        blastadd = 0
         ven_brother_grammituis = Model(
             weapons=[
                 AStat(A=Dice(), BS_WS=3, S=5, AP=-1, D=1, description="Heavy Flamer") * Torrent,
@@ -997,6 +1001,7 @@ if __name__ == "__main__":
             'redemptor_dread': redemptor_dread,
             'ven_brother_grammituis': ven_brother_grammituis,
             'full_eradicators_firedis_stack': full_eradicators_firedis_stack,
+            'full_eradicators_firedis_stack_at_vehicle': full_eradicators_firedis_stack_at_vehicle,
             'leman_russ': leman_russ_tank,
             'wraithguard_cannon': wraithguard_cannon,
             'wraithguard_scythe': wraithguard_scythe,
