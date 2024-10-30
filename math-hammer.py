@@ -146,7 +146,7 @@ def modifier_always_succeed(sequence):
 # =========================================================================== #
 class Dice():
     '''
-        TODO 'sides' could also be a list of integers, in which case we are 
+        'sides' can also be a list of integers, in which case we are 
         rolling multiple "dice" but to the framework, it's only a single 
         rerollable "thing".
     '''
@@ -154,13 +154,24 @@ class Dice():
         self.roll_count = 0
         self.sides = sides
         self.fixed_value = fixed
-        self.value = None if self.fixed_value is None else self.fixed_value
+        try: # self.sides is a list
+            if self.fixed_value is not None:
+                self.value = [self.fixed_value for _ in self.sides]
+            else:
+                self.value = [None for _ in self.sides]
+        except Exception as e: # self.sides is an int
+            self.value = None if self.fixed_value is None else self.fixed_value
         self.bias = bias
     
     def roll(self):
         self.roll_count += 1
-        if self.fixed_value is None:
-            self.value = random.randint(1,self.sides) + self.bias
+        try: # self.sides is a list
+            for idx, sides in enumerate(self.sides):
+                if self.fixed_value is None:
+                    self.value[idx] = random.randint(1,sides) + self.bias
+        except Exception as e: # self.sides is an int
+            if self.fixed_value is None:
+                self.value = random.randint(1,self.sides) + self.bias
         if self.roll_count > 2:
             raise ValueError(f"Roll count reached {self.roll_count}, which is illegal")
         return self
@@ -207,6 +218,7 @@ class AttackSequenceState():
             'sv': None, 
             'damage': None, 
             'fnp': None,
+            'wounds': None,
             'criticalhit': 6,
             'criticalwound': 6}
         # game system will assign char to threshold when making the roll and determining success
@@ -227,7 +239,8 @@ class AttackSequenceState():
         return result
 
     def resolve(self):
-        return max(0, len(self.pool['fnp']))
+        dms = max(0, np.sum(self.pool['fnp']))
+        return dms
 
     def determine_threshold(self, sequence):
         if sequence == 'hit':
@@ -243,7 +256,7 @@ class AttackSequenceState():
         return self.char['skill']
 
     def _determine_fnp_threshold(self):
-        return self.char['fnp']
+        return 42 if self.char['fnp'] is None else self.char['fnp']
 
     def _determine_wound_threshold(self):
         T = self.threshold['toughness']
@@ -365,19 +378,28 @@ def create_standard_attack_modifier_sequence():
         return state
     def resolve_damage_pool(state):
         damage_to_add = state.roll['damage'].value
-        for _ in range(0, damage_to_add):
-            state.pool['damage'].append(Dice())
+        # for _ in range(0, damage_to_add):
+        state.pool['damage'].append(Dice([6 for _ in range(0, damage_to_add)]))
         return state
     def resolve_fnp_pool(state):
-        try:
-            # need to check the modified roll first, as we rely on EAFP because THAT'S THE PYTHON WAY!!
-            roll_status = state.roll['fnp'].value < state.determine_threshold('fnp') 
-            if state.scratch['unmodified_roll'].value == 1:
-                return state
-            if roll_status is True:
-                state.pool['fnp'].append(Dice())
-        except Exception as e:
-            state.pool['fnp'].append(Dice())
+        def listify(item):
+            try:
+                _ = len(item)
+                return np.asarray(item)
+            except Exception as e:
+                return np.asarray([item])
+
+        # count up the number of fails
+        roll_status = listify(state.roll['fnp'].value) < state.determine_threshold('fnp') 
+        unmod_roll_is_1_status = listify(state.scratch['unmodified_roll'].value) == 1
+        defender_fnp_fails = roll_status + unmod_roll_is_1_status
+        damage_tally = np.sum(defender_fnp_fails == True)
+
+        # of course, we can only do as much damage as there are wounds on the target
+        target_wounds = state.char['wounds']
+        state.pool['fnp'].append(min(target_wounds, damage_tally))
+        # state.pool['fnp'].append(damage_tally)
+
         return state
 
     # the keys are, basically, the steps in the state machine.
@@ -450,7 +472,7 @@ class DStat():
         self.description = description
 
         # we only interact with the .char field
-        self.modifiers = {'preamble': [assign_char('toughness', self.toughness), assign_char('invuln', self.invuln), assign_char('sv', self.save), assign_char('fnp', self.feelnopain)],
+        self.modifiers = {'preamble': [assign_char('toughness', self.toughness), assign_char('invuln', self.invuln), assign_char('sv', self.save), assign_char('fnp', self.feelnopain), assign_char('wounds', self.wounds)],
                           'attacks': [identity()], 
                           'hit': [identity()], 
                           'strength': [identity()],
@@ -656,7 +678,6 @@ def mean_loop(attacker, defender, count):
     else:
         for ii in range(0, N):
             acc[ii] = defender - attacker
-    # return mean
     return np.mean(acc)
 
 def stats_comp(sample):
@@ -738,7 +759,7 @@ def run_test():
 
     TOUGHNESS = 5
     SAVE = 4
-    WOUNDS = 1
+    WOUNDS = 6
 
     TestModelArmour = DStat(T=TOUGHNESS, Sv=SAVE, W=WOUNDS)
     TestModelGun = AStat(A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE)
@@ -876,8 +897,33 @@ if __name__ == "__main__":
             defence=DStat(T=4, Sv=3, W=4, Inv=4),
             pts=60+15, name="Chaplain Gregor Ironmaw the Orc Slayer"
         ) * TemplarVow
-        # apothecary_bio_gun = AStat(PTS=55+30, A=1, BS_WS=3, S=5, AP=-1, D=2)
 
+        # ==================================================================================== #
+        #       Redemptor Fists
+        # ==================================================================================== #
+        # redemptor_claw = [ AStat(PTS=210, A=Dice(), BS_WS=3, S=5, AP=-1, D=1) * TemplarVow ]
+        # brutalis_redemptor_talons_strike = [ AStat(PTS=160, A=6, BS_WS=3, S=12, AP=-2, D=3) * TemplarVow * TwinLinked]
+        # brutalis_redemptor_talons_sweep = [ AStat(PTS=160, A=10, BS_WS=3, S=7, AP=-2, D=1) * TemplarVow * TwinLinked]
+        # redemptor_claw_wrath = mod_squad(mod_squad(redemptor_claw, AP_PlusOne), StrengthPlusOne)
+        # brutalis_redemptor_talons_strike_wrath = mod_squad(mod_squad(brutalis_redemptor_talons_strike, AP_PlusOne), StrengthPlusOne)
+        # brutalis_redemptor_talons_sweep_wrath = mod_squad(mod_squad(brutalis_redemptor_talons_sweep, AP_PlusOne), StrengthPlusOne)
+
+        # redemptor_boyz = {
+        #     'redemptor_claw': redemptor_claw,
+        #     'redemptor_claw_wrath': redemptor_claw_wrath,
+        #     'brutalis_redemptor_talons_strike': brutalis_redemptor_talons_strike,
+        #     'brutalis_redemptor_talons_strike_wrath': brutalis_redemptor_talons_strike_wrath,
+        #     'brutalis_redemptor_talons_sweep': brutalis_redemptor_talons_sweep,
+        #     'brutalis_redemptor_talons_sweep_wrath': brutalis_redemptor_talons_sweep_wrath,
+        # }
+
+
+        punching_redemptor_dread = Model(
+            weapons=AStat(A=5, BS_WS=3, S=12, AP=-2, D=3, description="Redemptor Fist"),
+            defence=DStat(T=10, Sv=2, W=12),
+            pts=210, name="Redemptor Dreadnought"
+        ) * TemplarVow
+        punching_redemptor_dread_wrath = punching_redemptor_dread * AP_PlusOne * StrengthPlusOne
 
         # characters = {
         #     'the_emperors_champion_strike': [ the_emperors_champion_strike * TemplarVow ],
@@ -887,6 +933,8 @@ if __name__ == "__main__":
             'the_emperors_champion_strike': the_emperors_champion_strike,
             'the_emperors_champion_sweep': the_emperors_champion_sweep,
             'chaplain_gregor_ironmaw': chaplain_gregor_ironmaw,
+            'punching_redemptor_dread': punching_redemptor_dread,
+            'punching_redemptor_dread_wrath': punching_redemptor_dread_wrath,
         }
 
         # ==================================================================================== #
@@ -919,7 +967,7 @@ if __name__ == "__main__":
         full_eradicators_firedis_stack = full_squad_eradicators * BiologisFireDicipline
         full_eradicators_firedis_stack_at_vehicle = full_squad_eradicators_at_vehicle * BiologisFireDicipline
 
-        blastadd = 0
+        blastadd = 1
         ven_brother_grammituis = Model(
             weapons=[
                 AStat(A=Dice(), BS_WS=3, S=5, AP=-1, D=1, description="Heavy Flamer") * Torrent,
@@ -956,24 +1004,6 @@ if __name__ == "__main__":
             'guardsmen': guardsmen,
         }
 
-        # ==================================================================================== #
-        #       Redemptor Fists
-        # ==================================================================================== #
-        # redemptor_claw = [ AStat(PTS=210, A=Dice(), BS_WS=3, S=5, AP=-1, D=1) * TemplarVow ]
-        # brutalis_redemptor_talons_strike = [ AStat(PTS=160, A=6, BS_WS=3, S=12, AP=-2, D=3) * TemplarVow * TwinLinked]
-        # brutalis_redemptor_talons_sweep = [ AStat(PTS=160, A=10, BS_WS=3, S=7, AP=-2, D=1) * TemplarVow * TwinLinked]
-        # redemptor_claw_wrath = mod_squad(mod_squad(redemptor_claw, AP_PlusOne), StrengthPlusOne)
-        # brutalis_redemptor_talons_strike_wrath = mod_squad(mod_squad(brutalis_redemptor_talons_strike, AP_PlusOne), StrengthPlusOne)
-        # brutalis_redemptor_talons_sweep_wrath = mod_squad(mod_squad(brutalis_redemptor_talons_sweep, AP_PlusOne), StrengthPlusOne)
-
-        # redemptor_boyz = {
-        #     'redemptor_claw': redemptor_claw,
-        #     'redemptor_claw_wrath': redemptor_claw_wrath,
-        #     'brutalis_redemptor_talons_strike': brutalis_redemptor_talons_strike,
-        #     'brutalis_redemptor_talons_strike_wrath': brutalis_redemptor_talons_strike_wrath,
-        #     'brutalis_redemptor_talons_sweep': brutalis_redemptor_talons_sweep,
-        #     'brutalis_redemptor_talons_sweep_wrath': brutalis_redemptor_talons_sweep_wrath,
-        # }
 
         # ==================================================================================== #
         #       Sword Brethern
