@@ -204,7 +204,7 @@ class AttackSequenceState():
     def __init__(self):
         self.scratch = {} # for, you know, whatever
         # Pools are lists of Dice.  These dice move to the next pool when success is marked
-        self.pool = {'preamble': [], 'attacks': [], 'hit': [], 'wound': [], 'save': [], 'damage': [], 'fnp': []}
+        self.pool = {'preamble': [], 'attacks': [], 'hit': [], 'wound': [], 'save': [], 'damage': []}
         # Roll is the current dice being rolled.
         self.roll = {'attacks': None, 'hit': None, 'wound': None, 'save': None, 'damage': None, 'fnp': None}
         # attacker and defender fill in these when asked
@@ -233,14 +233,17 @@ class AttackSequenceState():
             'save': None, 
             'damage': None, 
             'fnp': None}
+        self.scratch['actual_damage_used'] = []
+        self.scratch['damage_wasted'] = []
 
     def __str__(self):
         result = f"pool: {self.pool}\n" + f"roll: {self.roll}\n" + f"char: {self.char}\n" + f"threshold: {self.threshold}"
         return result
 
     def resolve(self):
-        dms = max(0, np.sum(self.pool['fnp']))
-        return dms
+        damage_used = max(0, np.sum(self.scratch['actual_damage_used']))
+        damage_wasted = max(0, np.sum(self.scratch['damage_wasted']))
+        return damage_used, damage_wasted
 
     def determine_threshold(self, sequence):
         if sequence == 'hit':
@@ -402,7 +405,8 @@ def create_standard_attack_modifier_sequence():
 
         # of course, we can only do as much damage as there are wounds on the target
         target_wounds = state.char['wounds']
-        state.pool['fnp'].append(min(target_wounds, damage_tally))
+        state.scratch['actual_damage_used'].append(min(target_wounds, damage_tally))
+        state.scratch['damage_wasted'].append(max(0, damage_tally - target_wounds))
 
         return state
 
@@ -562,7 +566,7 @@ class Model():
         '''
         def handle_model(att_model):
             try:
-                acc = 0
+                acc = np.zeros((2,))
                 for wpn in att_model.weapons:
                     acc += self.defence - wpn
                 return acc
@@ -570,7 +574,7 @@ class Model():
                 return self.defence - att_model.weapons
 
         try:
-            acc = 0
+            acc = np.zeros((2,))
             for model in attacker.models:
                 acc += handle_model(model)
             return acc
@@ -617,7 +621,7 @@ class Unit():
             unit - unit
             unit - model
         '''
-        acc = 0
+        acc = np.zeros((2,))
         defending_model = self._get_best_defender()
         try: # unit - unit
             for model in other.models:
@@ -672,17 +676,18 @@ CriticalHit_5up = Modifier(sequence='attacks', functor=modifier_characteristic_s
 # =================================================================================== #
 def mean_loop(attacker, defender, count):
     N = count
-    acc = np.zeros((N,)) 
+    acc = np.zeros((N,2)) # used, wasted
     if type(attacker) is list:
         for att in attacker:
-            tmp = np.zeros((N,)) 
+            tmp = np.zeros((N,2)) 
             for ii in range(0, N):
-                tmp[ii] = defender - att
+                # used, wasted = defender - att
+                tmp[ii,:] = defender - att
             acc += tmp
     else:
         for ii in range(0, N):
-            acc[ii] = defender - attacker
-    return np.mean(acc)
+            acc[ii,:] = defender - attacker
+    return np.mean(acc[:,0]), np.mean(acc[:,1])
 
 def stats_comp(sample):
     # create histogram
@@ -697,18 +702,19 @@ def stats_comp(sample):
 
 def stats_loop(attacker, defender, count):
     N = count
-    acc = np.zeros((N,)) 
+    acc = np.zeros((N,2)) # used, wasted
     if type(attacker) is list:
         for att in attacker:
-            tmp = np.zeros((N,)) 
+            tmp = np.zeros((N,2)) 
             for ii in range(0, N):
-                tmp[ii] = defender - att
+                tmp[ii,:] = defender - att
             acc += tmp
     else:
         for ii in range(0, N):
-            acc[ii] = defender - attacker
-    cdf, histogram = stats_comp(acc)
-    return cdf, histogram, acc
+            acc[ii,:] = defender - attacker
+    cdf, histogram = stats_comp(acc[:,0])
+    cdf_waste, histogram_waste = stats_comp(acc[:,1])
+    return cdf, histogram, acc[:,0], cdf_waste, histogram_waste, acc[:,1]
 
 def fold_to_models_removed_stats(damage_seq, target):
     W = target.wounds
@@ -795,7 +801,8 @@ def run_test():
     TEST_COUNT=10000
     print(f"Context: Attacks=Damage=1 (unless noted otherwise), Hit=0.5, Wound=0.333, Save=0.5, MonteCarlo Count={TEST_COUNT}")
     for test_att, expected, details in attackers:
-        print(f"actual, expected: {mean_loop(attacker=test_att, defender=test_def, count=TEST_COUNT):0.4f}, {expected:0.4f}  ({details})")
+        done, _ = mean_loop(attacker=test_att, defender=test_def, count=TEST_COUNT)
+        print(f"actual, expected: {done:0.4f}, {expected:0.4f}  ({details})")
 
 if __name__ == "__main__":
     if False:
@@ -1171,7 +1178,7 @@ if __name__ == "__main__":
 
         VERY_LIKELY = args.verylikely
         for k in the_list:
-            data, _, damage_sequence = stats_loop(attacker=the_list[k], defender=the_target, count=args.count)
+            data, _, damage_sequence, waste_data, _, _ = stats_loop(attacker=the_list[k], defender=the_target, count=args.count)
 
             def compute_likelihood_value(data, thresh):
                 xdata = np.asarray([ float(x) for x in range(0,len(data)) ])
@@ -1179,6 +1186,7 @@ if __name__ == "__main__":
 
             very_likely_damage_output = compute_likelihood_value(data, VERY_LIKELY)
             expected_damage_output = compute_likelihood_value(data, 0.5)
+            expected_damage_waste = compute_likelihood_value(waste_data, 0.5)
 
             # sum the points for each side
             def_points = the_target.points
@@ -1196,6 +1204,7 @@ if __name__ == "__main__":
             print(f"  {att_points} points attacking a target of {def_points} points")
             print(f"  {int(VERY_LIKELY*100)}% chance {int(very_likely_damage_output)} or more damage is dealt.")
             print(f"    Expected value for damage is {int(expected_damage_output)}.")
+            print(f"    Expected value for damage wasted is {int(expected_damage_waste)}.")
             print(f"  {int(VERY_LIKELY*100)}% chance {very_likely_number_of_rounds_taken:0.1f} rounds taken to remove a model.")
             print(f"  {int(VERY_LIKELY*100)}% chance {int(very_likely_models_removed)} models or more are removed in a single round.")
             print(f"  {points_per_damage:0.2f} PPD")
