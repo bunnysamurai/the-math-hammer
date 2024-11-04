@@ -594,16 +594,26 @@ class Model():
         return result
 
 class Unit():
-    def __init__(self, model_list):
+    def __init__(self, model_list: list):
         '''
             unit_wounds is the total amount of wounds this unit has
             wounds is the **majority** wounds characteristic among models in the unit
         '''
-        self.models = model_list
-        self.unit_wounds = np.sum([mdl.defence.wounds for mdl in self.models])
-        mode, _ = scipy.stats.mode([mdl.defence.wounds for mdl in self.models])
-        self.wounds = np.max(mode)
-        self.points = np.sum([mdl.points for mdl in self.models])
+        # the list of unmodified models
+        self.models_untouched = model_list
+        # the list of modified models, plus a book-keeping list of the modifiers active for the unit
+        self.models = copy.deepcopy(self.models_untouched)
+        self.unit_modifiers = []
+        # the aggregate stats
+        self.unit_wounds, self.wounds, self.points = self.__aggregate_model_stats()
+
+
+    def __aggregate_model_stats(self):
+        unit_wounds = np.sum([mdl.defence.wounds for mdl in self.models_untouched])
+        mode, _ = scipy.stats.mode([mdl.defence.wounds for mdl in self.models_untouched])
+        wounds = np.max(mode)
+        points = np.sum([mdl.points for mdl in self.models_untouched])
+        return unit_wounds, wounds, points
 
     def __str__(self):
         return f"{self.models[0]}"
@@ -613,7 +623,27 @@ class Unit():
             unit * modifier
         '''
         result = copy.deepcopy(self)
-        result.models = [x * other for x in result.models]
+        result.unit_modifiers.append(other)
+        result.models = copy.deepcopy(result.models_untouched)
+        for mod in result.unit_modifiers:
+            result.models = [x * mod for x in result.models]
+        return result
+
+    def __add__(self, other: Model):
+        ''' other had better be a Model'''
+        result = copy.deepcopy(self)
+
+        # when we add a unit, we need to:
+        #   update the list of unmodifier models
+        #   update the aggregate stats
+        #   update the list of modified models
+
+        result.models_untouched.append(copy.deepcopy(other))
+        result.unit_wounds, result.wounds, result.points = result.__aggregate_model_stats()
+
+        for mod in result.unit_modifiers:
+            other = other * mod
+        result.models.append(other)
         return result
 
     def __sub__(self, other):
@@ -885,71 +915,193 @@ if __name__ == "__main__":
 
         # Our boyz
         # ==================================================================================== #
+        # ==================================================================================== #
         #      Melee Boyz 
+        # ==================================================================================== #
         # ==================================================================================== #
         # Our vow
         # TemplarVow = SustainedHits_1
         TemplarVow = LethalHits
+        CrusadersWrath = AP_PlusOne * StrengthPlusOne
+        ChampStack = SustainedHits_1 * CriticalHit_5up # Champ has Sigismund's Seal and spend 1 CP to give them vow "Accept Any Challenge"
 
 
         the_emperors_champion_sweep = Model(
-            weapons=AStat(A=10, BS_WS=2, S=6, AP=-2, D=1, description="Black Sword (Sweep)"),
+            weapons=AStat(A=10+1, BS_WS=2, S=6, AP=-2, D=1, description="Black Sword (Sweep) with Sigismund's Seal"),
             defence=DStat(T=4, Sv=2, W=5, Inv=4, description="Black Plate"),
             pts=75, name="The Emperor's Champion (Sweeping)"
-        ) * TemplarVow
+        )
         the_emperors_champion_strike = Model(
-            weapons=AStat(A=6, BS_WS=2, S=8, AP=-3, D=3, description="Black Sword (Strike)"),
+            weapons=AStat(A=6+1, BS_WS=2, S=8, AP=-3, D=3, description="Black Sword (Strike) with Sigismund's Seal"),
             defence=DStat(T=4, Sv=2, W=5, Inv=4, description="Black Plate"),
             pts=75, name="The Emperor's Champion (Striking)"
-        ) * TemplarVow
+        )
 
         chaplain_gregor_ironmaw = Model(
-            weapons=AStat(A=5, BS_WS=2, S=6, AP=-1, D=2, description="Crozius Arcanum with Perdition's Edge") * PlusOneToWound * StrengthPlusOne * AP_PlusOne * AttacksPlusOne,
+            weapons=AStat(A=5, BS_WS=2, S=6, AP=-1, D=2, description="Crozius Arcanum with Perdition's Edge") * StrengthPlusOne * AP_PlusOne * AttacksPlusOne,
             defence=DStat(T=4, Sv=3, W=4, Inv=4),
-            pts=60+15, name="Chaplain Gregor Ironmaw the Orc Slayer"
-        ) * TemplarVow
+            pts=60+15, name="Chaplain Gregor Ironmaw, Orc Slayer"
+        )
 
         # ==================================================================================== #
-        #       Redemptor Fists
+        #               Redemptor Fists
         # ==================================================================================== #
-        # redemptor_claw = [ AStat(PTS=210, A=Dice(), BS_WS=3, S=5, AP=-1, D=1) * TemplarVow ]
-        # brutalis_redemptor_talons_strike = [ AStat(PTS=160, A=6, BS_WS=3, S=12, AP=-2, D=3) * TemplarVow * TwinLinked]
-        # brutalis_redemptor_talons_sweep = [ AStat(PTS=160, A=10, BS_WS=3, S=7, AP=-2, D=1) * TemplarVow * TwinLinked]
-        # redemptor_claw_wrath = mod_squad(mod_squad(redemptor_claw, AP_PlusOne), StrengthPlusOne)
-        # brutalis_redemptor_talons_strike_wrath = mod_squad(mod_squad(brutalis_redemptor_talons_strike, AP_PlusOne), StrengthPlusOne)
-        # brutalis_redemptor_talons_sweep_wrath = mod_squad(mod_squad(brutalis_redemptor_talons_sweep, AP_PlusOne), StrengthPlusOne)
-
-        # redemptor_boyz = {
-        #     'redemptor_claw': redemptor_claw,
-        #     'redemptor_claw_wrath': redemptor_claw_wrath,
-        #     'brutalis_redemptor_talons_strike': brutalis_redemptor_talons_strike,
-        #     'brutalis_redemptor_talons_strike_wrath': brutalis_redemptor_talons_strike_wrath,
-        #     'brutalis_redemptor_talons_sweep': brutalis_redemptor_talons_sweep,
-        #     'brutalis_redemptor_talons_sweep_wrath': brutalis_redemptor_talons_sweep_wrath,
-        # }
-
 
         punching_redemptor_dread = Model(
             weapons=AStat(A=5, BS_WS=3, S=12, AP=-2, D=3, description="Redemptor Fist"),
             defence=DStat(T=10, Sv=2, W=12),
             pts=210, name="Redemptor Dreadnought"
         ) * TemplarVow
-        punching_redemptor_dread_wrath = punching_redemptor_dread * AP_PlusOne * StrengthPlusOne
+        punching_redemptor_dread_wrath = punching_redemptor_dread * CrusadersWrath 
 
-        # characters = {
-        #     'the_emperors_champion_strike': [ the_emperors_champion_strike * TemplarVow ],
-        #     'chaplain_gregor_ironmaw': [ chaplain_gregor_ironmaw * TemplarVow ]
-        # }
+        brutalis_talon_sweep = Model(
+            weapons=AStat(A=10, BS_WS=3, S=7, AP=-2, D=1, description="Talons (Sweep)") * TwinLinked,
+            defence=DStat(T=10, Sv=2, W=12),
+            pts=160, name="Brutalis Dreadnought"
+        ) * TemplarVow
+        brutalis_talon_strike = Model(
+            weapons=AStat(A=6, BS_WS=3, S=12, AP=-2, D=3, description="Talons (Strike)") * TwinLinked,
+            defence=DStat(T=10, Sv=2, W=12),
+            pts=160, name="Brutalis Dreadnought"
+        ) * TemplarVow
+        brutalis_talon_sweep_wrath = brutalis_talon_sweep * CrusadersWrath
+        brutalis_talon_strike_wrath = brutalis_talon_strike * CrusadersWrath
+
+        # ==================================================================================== #
+        #               Sword Brethern
+        # ==================================================================================== #
+
+        sw_power_weapon = AStat(A=4, BS_WS=3, S=5, AP=-2, D=1, description="Power Weapon")
+        sw_chainsword = AStat(A=5, BS_WS=3, S=4, AP=-1, D=1, description="Chainsword")
+        sw_thammer = AStat(A=3, BS_WS=4, S=8, AP=-2, D=2, description="Thunder Hammer") * DevestatingWounds
+        sw_lclaws = AStat(A=5, BS_WS=3, S=5, AP=-2, D=1, description="Lightning Claws") * TwinLinked
+        sw_mastercraft_psword = AStat(A=4, BS_WS=2, S=5, AP=-2, D=2, description="Master-crafted Power Weapon")
+
+        sw_defence = DStat(T=4, Sv=3, W=3)
+
+        sword_brethern = Unit([
+            Model(weapons=sw_power_weapon, defence=sw_defence, pts=150/5, name="Primaris Sword Brother"),
+            Model(weapons=sw_power_weapon, defence=sw_defence, pts=150/5, name="Primaris Sword Brother"),
+            Model(weapons=sw_thammer, defence=sw_defence, pts=150/5, name="Primaris Sword Brother"),
+            Model(weapons=sw_lclaws, defence=sw_defence, pts=150/5, name="Primaris Sword Brother"),
+            Model(weapons=sw_mastercraft_psword, defence=sw_defence, pts=150/5, name="Sword Brother Castellan"),
+        ]) * TemplarVow * DamagePlusOne
+        sword_brethern_wrath = sword_brethern * CrusadersWrath
+
+        # led by The Emperor's Champion
+        sword_brethern_ld_by_champ = sword_brethern + the_emperors_champion_strike
+        sword_brethern_ld_by_champ_wrath = sword_brethern_ld_by_champ * CrusadersWrath
+        sword_brethern_ld_by_champ_stack = sword_brethern_ld_by_champ * ChampStack
+        sword_brethern_ld_by_champ_wrath_stack = sword_brethern_ld_by_champ_wrath * ChampStack
+
+        # led by Gregor Ironmaw, Orc Slayer
+        sword_brethern_ld_by_gregor = (sword_brethern + chaplain_gregor_ironmaw) * PlusOneToWound
+        sword_brethern_ld_by_gregor_wrath = sword_brethern_ld_by_gregor * CrusadersWrath
+
+        # ==================================================================================== #
+        #               Primaris Crusader Squad
+        # ==================================================================================== #
+
+        pric_chainsword = AStat(A=5, BS_WS=3, S=4, AP=-1, D=1, description="Chainsword")
+        pric_powerfist = AStat(A=3, BS_WS=3, S=8, AP=-2, D=2, description="Power Fist")
+        pric_powerweapon = AStat(A=3, BS_WS=3, S=5, AP=-2, D=1, description="Power Weapon")
+        pric_def_neophyte = DStat(T=4, Sv=4, W=2)
+        pric_def_initiate = DStat(T=4, Sv=3, W=2)
+
+        pri_crusaders = Unit([
+            Model(weapons=pric_powerweapon, defence=pric_def_initiate, pts=140/10, name="Primaris Sword Brother"),
+            Model(weapons=pric_chainsword, defence=pric_def_neophyte, pts=140/10, name="Primais Neophyte"),
+            Model(weapons=pric_chainsword, defence=pric_def_neophyte, pts=140/10, name="Primais Neophyte"),
+            Model(weapons=pric_chainsword, defence=pric_def_neophyte, pts=140/10, name="Primais Neophyte"),
+            Model(weapons=pric_chainsword, defence=pric_def_neophyte, pts=140/10, name="Primais Neophyte"),
+            Model(weapons=pric_chainsword, defence=pric_def_initiate, pts=140/10, name="Primaris Initiate"),
+            Model(weapons=pric_chainsword, defence=pric_def_initiate, pts=140/10, name="Primaris Initiate"),
+            Model(weapons=pric_chainsword, defence=pric_def_initiate, pts=140/10, name="Primaris Initiate"),
+            Model(weapons=pric_powerfist, defence=pric_def_initiate, pts=140/10, name="Primaris Initiate"),
+            Model(weapons=pric_powerfist, defence=pric_def_initiate, pts=140/10, name="Primaris Initiate"),
+        ]) * TemplarVow
+
+        # led by Gregor Ironmaw, Orc Slayer
+        pri_crusaders_ld_by_gregor = (pri_crusaders + chaplain_gregor_ironmaw) * PlusOneToWound
+        pri_crusaders_ld_by_gregor_wrath = pri_crusaders_ld_by_gregor * CrusadersWrath
+
+        # led by The Emperor's Champion
+        pri_crusaders_ld_by_champ = (pri_crusaders + the_emperors_champion_strike)
+        pri_crusaders_ld_by_champ_wrath = pri_crusaders_ld_by_champ * CrusadersWrath
+        pri_crusaders_ld_by_champ_stack = pri_crusaders_ld_by_champ * ChampStack
+        pri_crusaders_ld_by_champ_wrath_stack = pri_crusaders_ld_by_champ_wrath * ChampStack
+
+        # ==================================================================================== #
+        #               Assault Intercessors
+        # ==================================================================================== #
+
+        ai_chainsword = AStat(A=4, BS_WS=3, S=4, AP=-1, D=1, description="Astartes Chainsword")
+        ai_defence = sw_defence 
+
+        assault_intercessors = Unit([
+            Model(weapons=ai_chainsword, defence=ai_defence, pts=75/5, name="Assault Intercessor"),
+            Model(weapons=ai_chainsword, defence=ai_defence, pts=75/5, name="Assault Intercessor"),
+            Model(weapons=ai_chainsword, defence=ai_defence, pts=75/5, name="Assault Intercessor"),
+            Model(weapons=ai_chainsword, defence=ai_defence, pts=75/5, name="Assault Intercessor"),
+            Model(weapons=ai_chainsword, defence=ai_defence, pts=75/5, name="Assault Intercessor"),
+            Model(weapons=ai_chainsword, defence=ai_defence, pts=75/5, name="Assault Intercessor"),
+            Model(weapons=ai_chainsword, defence=ai_defence, pts=75/5, name="Assault Intercessor"),
+            Model(weapons=ai_chainsword, defence=ai_defence, pts=75/5, name="Assault Intercessor"),
+            Model(weapons=ai_chainsword, defence=ai_defence, pts=75/5, name="Assault Intercessor"),
+            Model(weapons=ai_chainsword, defence=ai_defence, pts=75/5, name="Assault Intercessor Sergeant"),
+        ]) * TemplarVow * RerollWoundsOne
+
+        # led by Gregor Ironmaw, Orc Slayer
+        assault_intercessors_ld_by_gregor = (assault_intercessors + chaplain_gregor_ironmaw) * PlusOneToWound
+        assault_intercessors_ld_by_gregor_wrath = assault_intercessors_ld_by_gregor * CrusadersWrath
+
+        # led by The Emperor's Champion
+        assault_intercessors_ld_by_champ = (assault_intercessors + the_emperors_champion_strike)
+        assault_intercessors_ld_by_champ_wrath = assault_intercessors_ld_by_champ * CrusadersWrath
+
+
+
+        # ==================================================================================== #
         melee_boyz = {
-            'the_emperors_champion_strike': the_emperors_champion_strike,
-            'the_emperors_champion_sweep': the_emperors_champion_sweep,
-            'chaplain_gregor_ironmaw': chaplain_gregor_ironmaw,
+            'chaplain_gregor_ironmaw': chaplain_gregor_ironmaw * TemplarVow,
+            'the_emperors_champion_strike': the_emperors_champion_strike * TemplarVow,
+            'the_emperors_champion_sweep': the_emperors_champion_sweep * TemplarVow,
+
             'punching_redemptor_dread': punching_redemptor_dread,
             'punching_redemptor_dread_wrath': punching_redemptor_dread_wrath,
+            'brutalis_talon_sweep': brutalis_talon_sweep,
+            'brutalis_talon_sweep_wrath': brutalis_talon_sweep_wrath,
+            'brutalis_talon_strike': brutalis_talon_strike,
+            'brutalis_talon_strike_wrath': brutalis_talon_strike_wrath,
+
+            'sword_brethern': sword_brethern,
+            'sword_brethern_wrath': sword_brethern_wrath,
+            'sword_brethern_ld_by_gregor (0CP)': sword_brethern_ld_by_gregor,
+            'sword_brethern_ld_by_gregor_wrath (1CP)': sword_brethern_ld_by_gregor_wrath,
+            'sword_brethern_ld_by_champ (0CP)': sword_brethern_ld_by_champ,
+            'sword_brethern_ld_by_champ_wrath (1CP)': sword_brethern_ld_by_champ_wrath,
+            'sword_brethern_ld_by_champ_stack (1CP)': sword_brethern_ld_by_champ_stack,
+            'sword_brethern_ld_by_champ_wrath_stack (2CP)': sword_brethern_ld_by_champ_wrath_stack,
+
+            'pri_crusaders': pri_crusaders,
+            'pri_crusaders_ld_by_gregor': pri_crusaders_ld_by_gregor,
+            'pri_crusaders_ld_by_gregor_wrath': pri_crusaders_ld_by_gregor_wrath,
+            'pri_crusaders_ld_by_champ': pri_crusaders_ld_by_champ,
+            'pri_crusaders_ld_by_champ_wrath': pri_crusaders_ld_by_champ_wrath,
+            'pri_crusaders_ld_by_champ_stack': pri_crusaders_ld_by_champ_stack,
+            'pri_crusaders_ld_by_champ_wrath_stack': pri_crusaders_ld_by_champ_wrath_stack,
+
+            'assault_intercessors': assault_intercessors,
+            'assault_intercessors_ld_by_gregor': assault_intercessors_ld_by_gregor,
+            'assault_intercessors_ld_by_gregor_wrath': assault_intercessors_ld_by_gregor_wrath,
+            'assault_intercessors_ld_by_champ': assault_intercessors_ld_by_champ,
+            'assault_intercessors_ld_by_champ_wrath': assault_intercessors_ld_by_champ_wrath,
         }
 
         # ==================================================================================== #
+        # ==================================================================================== #
         #       Ranged Boyz
+        # ==================================================================================== #
         # ==================================================================================== #
         BiologisFireDicipline = LethalHits * SustainedHits_1 * CriticalHit_5up
         TotalObliteration = RerollHits  * RerollWounds * Reroll_D6_Damage
@@ -1017,74 +1169,8 @@ if __name__ == "__main__":
         }
 
 
-        # ==================================================================================== #
-        #       Sword Brethern
-        # ==================================================================================== #
-        # primaris_sword_brother_with_chainsword = AStat(PTS=150/5, A=5, BS_WS=3, S=4, AP=-1, D=1) * DamagePlusOne
-        # primaris_sword_brother_with_powerweapon = AStat(PTS=150/5, A=4, BS_WS=3, S=5, AP=-2, D=1) * DamagePlusOne
-        # primaris_sword_brother_with_thunderhammer = AStat(PTS=150/5, A=3, BS_WS=4, S=8, AP=-2, D=2) * DevestatingWounds * DamagePlusOne
-        # primaris_sword_brother_with_lclaws = AStat(PTS=150/5, A=5, BS_WS=3, S=5, AP=-2, D=1) * TwinLinked  * DamagePlusOne
-        # primaris_castellan_with_mastercraft_psword = AStat(PTS=150/5, A=4, BS_WS=2, S=5, AP=-2, D=2) * DamagePlusOne
 
-        # sword_brethern = [
-        #     primaris_sword_brother_with_powerweapon * TemplarVow, 
-        #     primaris_sword_brother_with_thunderhammer * TemplarVow, 
-        #     primaris_sword_brother_with_powerweapon * TemplarVow, 
-        #     primaris_sword_brother_with_lclaws * TemplarVow,
-        #     primaris_castellan_with_mastercraft_psword * TemplarVow
-        #     ]
-        # super_sword_brethern = add_unit(sword_brethern, the_emperors_champion_strike * TemplarVow * DamagePlusOne)
-        # super_sword_brethern_crusaders_wrath = mod_squad(mod_squad(super_sword_brethern, AP_PlusOne), StrengthPlusOne)
 
-        # sword_bros_dict = {
-        #     'sword_brethern': sword_brethern,
-        #     'super_sword_brethern': super_sword_brethern,
-        #     'super_sword_brethern_crusaders_wrath': super_sword_brethern_crusaders_wrath 
-        # }
-
-        # ==================================================================================== #
-        #       Assault Intercessors
-        # ==================================================================================== #
-        # assault_intercessor = AStat(PTS=75/5, A=4, BS_WS=3, S=4, AP=-1, D=1) * RerollWoundsOne
-
-        # assault_intercessors = [assault_intercessor*TemplarVow for _ in range(0,10)]
-        # super_ai = add_unit(mod_squad(assault_intercessors, PlusOneToWound), chaplain_gregor_ironmaw * TemplarVow * RerollWoundsOne)
-        # super_ai_crusaders_wrath = mod_squad(mod_squad(super_ai, AP_PlusOne), StrengthPlusOne)
-
-        # assault_inter_dict = {
-        #     'assault_intercessors': assault_intercessors,
-        #     'super_ai': super_ai,
-        #     'super_ai_crusaders_wrath': super_ai_crusaders_wrath
-        # }
-
-        # ==================================================================================== #
-        #       Primaris Crusader Squad
-        # ==================================================================================== #
-        # primaris_neophyte_w_chainsword = AStat(PTS=140/10, A=5, BS_WS=3, S=4, AP=-1, D=1)
-        # primaris_initiate_w_chainsword = AStat(PTS=140/10, A=5, BS_WS=3, S=4, AP=-1, D=1)
-        # primaris_initiate_w_power_fist = AStat(PTS=140/10, A=3, BS_WS=3, S=8, AP=-2, D=2)
-        # primaris_sword_brother_w_powerweapons = AStat(PTS=140/10, A=3, BS_WS=3, S=5, AP=-2, D=1)
-
-        # pri_crusaders = [
-        #     primaris_neophyte_w_chainsword * TemplarVow,
-        #     primaris_neophyte_w_chainsword * TemplarVow,
-        #     primaris_neophyte_w_chainsword * TemplarVow,
-        #     primaris_neophyte_w_chainsword * TemplarVow,
-        #     primaris_initiate_w_chainsword * TemplarVow,
-        #     primaris_initiate_w_chainsword * TemplarVow,
-        #     primaris_initiate_w_chainsword * TemplarVow,
-        #     primaris_initiate_w_power_fist * TemplarVow,
-        #     primaris_initiate_w_power_fist * TemplarVow,
-        #     primaris_sword_brother_w_powerweapons * TemplarVow
-        # ]
-        # pri_crusaders_w_gregor = add_unit(mod_squad(pri_crusaders, PlusOneToWound), chaplain_gregor_ironmaw * TemplarVow)
-        # pri_crusaders_w_gregor_wrath = mod_squad(mod_squad(pri_crusaders_w_gregor, AP_PlusOne), StrengthPlusOne)
-
-        # pri_cru_dict = {
-        #     'pri_crusaders': pri_crusaders,
-        #     'pri_crusaders_w_gregor': pri_crusaders_w_gregor,
-        #     'pri_crusaders_w_gregor_wrath': pri_crusaders_w_gregor_wrath
-        # }
 
         # ==================================================================================== #
         #       Terminator Assault Squad
