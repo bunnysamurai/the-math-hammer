@@ -900,7 +900,6 @@ if __name__ == "__main__":
         wraithguard_cannon = Unit([wraithguard_model_cannon for _ in range(0,10)])
         wraithguard_scythe = Unit([wraithguard_model_dscythe for _ in range(0,10)])
 
-        # waveserpent = DStat(PTS=120, T=9, Sv=3, W=13, Inv=5, name="Wave Serpent")
         waveserpent = Model(
             weapons=[
                 AStat(A=1, BS_WS=3, S=12, AP=-3, D=Dice(bias=2), description="Twin Bright Lance") * TwinLinked,
@@ -1059,43 +1058,106 @@ if __name__ == "__main__":
         assault_intercessors_ld_by_champ = (assault_intercessors + the_emperors_champion_strike)
         assault_intercessors_ld_by_champ_wrath = assault_intercessors_ld_by_champ * CrusadersWrath
 
+        # ==================================================================================== #
+        #       Terminator Assault Squad
+        # ==================================================================================== #
+        TerminatorArmour = DStat(T=5, Sv=2, W=3, Inv=4, description="Blessed Terminator Armour")
+        TerminatorArmour_wShield = DStat(T=5, Sv=2, W=4, Inv=4, description="Blessed Terminator Armour with Storm Shield")
+
+        assault_termie_with_hammer_shield = Model(
+            weapons=AStat(A=3, BS_WS=4, S=8, AP=-2, D=2, description="Thunder Hammmer") * DevestatingWounds,
+            defence=TerminatorArmour_wShield,
+            pts=185/5,
+            name="Assault Terminator")
+        assault_termie_with_lclaws = Model(
+            weapons=AStat(A=5, BS_WS=3, S=5, AP=-2, D=1) * TwinLinked,
+            defence=TerminatorArmour,
+            pts=185/5,
+            name="Assault Terminator")
+
+        assault_termies_0_5 = Unit([
+            assault_termie_with_lclaws,
+            assault_termie_with_lclaws,
+            assault_termie_with_lclaws,
+            assault_termie_with_lclaws,
+            assault_termie_with_lclaws,
+        ]) * TemplarVow
+        assault_termies_0_5_wrath = assault_termies_0_5 * CrusadersWrath
+
+        assault_termies_5_0 = Unit([
+            assault_termie_with_hammer_shield,
+            assault_termie_with_hammer_shield,
+            assault_termie_with_hammer_shield,
+            assault_termie_with_hammer_shield,
+            assault_termie_with_hammer_shield,
+        ]) * TemplarVow
+        assault_termies_5_0_wrath = assault_termies_5_0 * CrusadersWrath
+
+        assault_termies_3_2 = Unit([
+            assault_termie_with_hammer_shield,
+            assault_termie_with_hammer_shield,
+            assault_termie_with_hammer_shield,
+            assault_termie_with_lclaws,
+            assault_termie_with_lclaws,
+        ]) * TemplarVow
+        assault_termies_3_2_wrath = assault_termies_3_2 * CrusadersWrath
+
+        assault_termies_2_3 = Unit([
+            assault_termie_with_hammer_shield,
+            assault_termie_with_hammer_shield,
+            assault_termie_with_lclaws,
+            assault_termie_with_lclaws,
+            assault_termie_with_lclaws,
+        ]) * TemplarVow
+        assault_termies_2_3_wrath = assault_termies_2_3 * CrusadersWrath
 
 
+
+            
         # ==================================================================================== #
         melee_boyz = {
-            'chaplain_gregor_ironmaw': chaplain_gregor_ironmaw * TemplarVow,
-            'the_emperors_champion_strike': the_emperors_champion_strike * TemplarVow,
-            'the_emperors_champion_sweep': the_emperors_champion_sweep * TemplarVow,
+            # 'chaplain_gregor_ironmaw': chaplain_gregor_ironmaw * TemplarVow,
+            # 'the_emperors_champion_strike': the_emperors_champion_strike * TemplarVow,
+            # 'the_emperors_champion_sweep': the_emperors_champion_sweep * TemplarVow,
 
-            'punching_redemptor_dread': punching_redemptor_dread,
-            'punching_redemptor_dread_wrath': punching_redemptor_dread_wrath,
-            'brutalis_talon_sweep': brutalis_talon_sweep,
-            'brutalis_talon_sweep_wrath': brutalis_talon_sweep_wrath,
-            'brutalis_talon_strike': brutalis_talon_strike,
-            'brutalis_talon_strike_wrath': brutalis_talon_strike_wrath,
+            # 'punching_redemptor_dread': punching_redemptor_dread,
+            # 'punching_redemptor_dread_wrath': punching_redemptor_dread_wrath,
+            # 'brutalis_talon_sweep': brutalis_talon_sweep,
+            # 'brutalis_talon_sweep_wrath': brutalis_talon_sweep_wrath,
+            # 'brutalis_talon_strike': brutalis_talon_strike,
+            # 'brutalis_talon_strike_wrath': brutalis_talon_strike_wrath,
 
-            'sword_brethern': sword_brethern,
-            'sword_brethern_wrath': sword_brethern_wrath,
-            'sword_brethern_ld_by_gregor (0CP)': sword_brethern_ld_by_gregor,
-            'sword_brethern_ld_by_gregor_wrath (1CP)': sword_brethern_ld_by_gregor_wrath,
-            'sword_brethern_ld_by_champ (0CP)': sword_brethern_ld_by_champ,
-            'sword_brethern_ld_by_champ_wrath (1CP)': sword_brethern_ld_by_champ_wrath,
-            'sword_brethern_ld_by_champ_stack (1CP)': sword_brethern_ld_by_champ_stack,
-            'sword_brethern_ld_by_champ_wrath_stack (2CP)': sword_brethern_ld_by_champ_wrath_stack,
+            # 'sword_brethern': sword_brethern,
+            # 'sword_brethern_wrath': sword_brethern_wrath,
+            # 'sword_brethern_ld_by_gregor (0CP)': sword_brethern_ld_by_gregor,
+            # 'sword_brethern_ld_by_gregor_wrath (1CP)': sword_brethern_ld_by_gregor_wrath,
+            # 'sword_brethern_ld_by_champ (0CP)': sword_brethern_ld_by_champ,
+            # 'sword_brethern_ld_by_champ_wrath (1CP)': sword_brethern_ld_by_champ_wrath,
+            # 'sword_brethern_ld_by_champ_stack (1CP)': sword_brethern_ld_by_champ_stack,
+            # 'sword_brethern_ld_by_champ_wrath_stack (2CP)': sword_brethern_ld_by_champ_wrath_stack,
 
-            'pri_crusaders': pri_crusaders,
-            'pri_crusaders_ld_by_gregor': pri_crusaders_ld_by_gregor,
-            'pri_crusaders_ld_by_gregor_wrath': pri_crusaders_ld_by_gregor_wrath,
-            'pri_crusaders_ld_by_champ': pri_crusaders_ld_by_champ,
-            'pri_crusaders_ld_by_champ_wrath': pri_crusaders_ld_by_champ_wrath,
-            'pri_crusaders_ld_by_champ_stack': pri_crusaders_ld_by_champ_stack,
-            'pri_crusaders_ld_by_champ_wrath_stack': pri_crusaders_ld_by_champ_wrath_stack,
+            # 'pri_crusaders': pri_crusaders,
+            # 'pri_crusaders_ld_by_gregor': pri_crusaders_ld_by_gregor,
+            # 'pri_crusaders_ld_by_gregor_wrath': pri_crusaders_ld_by_gregor_wrath,
+            # 'pri_crusaders_ld_by_champ': pri_crusaders_ld_by_champ,
+            # 'pri_crusaders_ld_by_champ_wrath': pri_crusaders_ld_by_champ_wrath,
+            # 'pri_crusaders_ld_by_champ_stack': pri_crusaders_ld_by_champ_stack,
+            # 'pri_crusaders_ld_by_champ_wrath_stack': pri_crusaders_ld_by_champ_wrath_stack,
 
-            'assault_intercessors': assault_intercessors,
-            'assault_intercessors_ld_by_gregor': assault_intercessors_ld_by_gregor,
-            'assault_intercessors_ld_by_gregor_wrath': assault_intercessors_ld_by_gregor_wrath,
-            'assault_intercessors_ld_by_champ': assault_intercessors_ld_by_champ,
-            'assault_intercessors_ld_by_champ_wrath': assault_intercessors_ld_by_champ_wrath,
+            # 'assault_intercessors': assault_intercessors,
+            # 'assault_intercessors_ld_by_gregor': assault_intercessors_ld_by_gregor,
+            # 'assault_intercessors_ld_by_gregor_wrath': assault_intercessors_ld_by_gregor_wrath,
+            # 'assault_intercessors_ld_by_champ': assault_intercessors_ld_by_champ,
+            # 'assault_intercessors_ld_by_champ_wrath': assault_intercessors_ld_by_champ_wrath,
+
+            # 'assault_termies_0_5': assault_termies_0_5,
+            'assault_termies_0_5_wrath': assault_termies_0_5_wrath,
+            # 'assault_termies_5_0': assault_termies_5_0,
+            'assault_termies_5_0_wrath': assault_termies_5_0_wrath,
+            # 'assault_termies_3_2': assault_termies_3_2,
+            'assault_termies_3_2_wrath': assault_termies_3_2_wrath,
+            # 'assault_termies_2_3': assault_termies_2_3,
+            'assault_termies_2_3_wrath': assault_termies_2_3_wrath,
         }
 
         # ==================================================================================== #
@@ -1172,55 +1234,6 @@ if __name__ == "__main__":
 
 
 
-        # ==================================================================================== #
-        #       Terminator Assault Squad
-        # ==================================================================================== #
-        # assault_termie_with_hammer_shield = AStat(PTS=185/5, A=3, BS_WS=4, S=8, AP=-2, D=2) * DevestatingWounds
-        # assault_termie_with_lclaws = AStat(PTS=185/5, A=5, BS_WS=3, S=5, AP=-2, D=1) * TwinLinked
-
-        # assault_termies_0_5 = [
-        #     assault_termie_with_lclaws * TemplarVow ,
-        #     assault_termie_with_lclaws * TemplarVow ,
-        #     assault_termie_with_lclaws * TemplarVow ,
-        #     assault_termie_with_lclaws * TemplarVow ,
-        #     assault_termie_with_lclaws * TemplarVow ,
-        # ]
-        # assault_termies_0_5_wrath = mod_squad(mod_squad(assault_termies_0_5, AP_PlusOne), StrengthPlusOne)
-        # assault_termies_5_0 = [
-        #     assault_termie_with_hammer_shield * TemplarVow ,
-        #     assault_termie_with_hammer_shield * TemplarVow ,
-        #     assault_termie_with_hammer_shield * TemplarVow ,
-        #     assault_termie_with_hammer_shield * TemplarVow ,
-        #     assault_termie_with_hammer_shield * TemplarVow ,
-        # ]
-        # assault_termies_5_0_wrath = mod_squad(mod_squad(assault_termies_5_0, AP_PlusOne), StrengthPlusOne)
-        # assault_termies_3_2 = [
-        #     assault_termie_with_hammer_shield * TemplarVow ,
-        #     assault_termie_with_hammer_shield * TemplarVow ,
-        #     assault_termie_with_hammer_shield * TemplarVow ,
-        #     assault_termie_with_lclaws * TemplarVow ,
-        #     assault_termie_with_lclaws * TemplarVow ,
-        # ]
-        # assault_termies_3_2_wrath = mod_squad(mod_squad(assault_termies_3_2, AP_PlusOne), StrengthPlusOne)
-        # assault_termies_2_3 = [
-        #     assault_termie_with_hammer_shield * TemplarVow ,
-        #     assault_termie_with_hammer_shield * TemplarVow ,
-        #     assault_termie_with_lclaws * TemplarVow ,
-        #     assault_termie_with_lclaws * TemplarVow ,
-        #     assault_termie_with_lclaws * TemplarVow ,
-        # ]
-        # assault_termies_2_3_wrath = mod_squad(mod_squad(assault_termies_2_3, AP_PlusOne), StrengthPlusOne)
-            
-        # terminator_assault_sqd_dict = {
-        #     'assault_termies_5_0': assault_termies_5_0,
-        #     'assault_termies_5_0_wrath': assault_termies_5_0_wrath,
-        #     'assault_termies_0_5': assault_termies_0_5,
-        #     'assault_termies_0_5_wrath': assault_termies_0_5_wrath,
-        #     'assault_termies_2_3': assault_termies_2_3,
-        #     'assault_termies_2_3_wrath': assault_termies_2_3_wrath,
-        #     'assault_termies_3_2': assault_termies_3_2,
-        #     'assault_termies_3_2_wrath': assault_termies_3_2_wrath
-        # }
 
         # ==================================================================================== #
         #       Statistical Reports
