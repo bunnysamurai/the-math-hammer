@@ -3,8 +3,6 @@
 import random
 import numpy as np
 import copy
-import matplotlib.pyplot as plt
-import argparse
 from enum import Enum
 import scipy
 import scipy.stats
@@ -32,7 +30,6 @@ def test_for_diceness(state, characteristic):
     # it's an int, or someone else can throw if not
     return CharState.Int
 
-DEFAULT_COUNT = 1000
 # =========================================================================== #
 ## more complicated stuff, or faction specific, or USR specific
 def modifier_critical_case(sequence, thing_to_do):
@@ -767,27 +764,54 @@ def fold_to_models_removed_stats(damage_seq, target):
     cdf_removed, _ = stats_comp(np.asarray(models_removed))
     return cdf_rounds, cdf_removed
 
+class AnalysisResult():
+    def __init__(self, attacker, defender, damage_cdf, damage_sequence, waste_data, pvalue, desc=None):
+        self.attacker = attacker
+        self.defender = defender
+        self.damage_cdf = damage_cdf
+        self.damage_sequence = damage_sequence
+        self.waste_data = waste_data
+        self.pvalue = pvalue
+        self.desc = desc
+        
+        def compute_likelihood_value(data, thresh):
+            xdata = np.asarray([ float(x) for x in range(0,len(data)) ])
+            return np.interp(thresh, data[::-1], xdata[::-1])
 
-def mod_squad(squad_list, mod):
-    tmp = copy.deepcopy([x * mod for x in squad_list])
-    return tmp
+        self.very_likely_damage_output = compute_likelihood_value(damage_cdf, self.pvalue)
+        self.expected_damage_output = compute_likelihood_value(damage_cdf, 0.5)
+        self.expected_damage_waste = compute_likelihood_value(waste_data, 0.5)
 
-def add_unit(squad, unit):
-    tmp = copy.deepcopy(squad)
-    tmp.append(unit)
-    return tmp
+        # potential relative to point cost
+        self.att_points = attacker.points
+        self.def_points = defender.points
+        self.points_per_damage = self.att_points / self.very_likely_damage_output
+        
+        # models-removed-per-round and rounds-taken-to-remove-model
+        self.cdf_rounds_taken, self.cdf_models_removed = fold_to_models_removed_stats(damage_sequence, defender)
+        self.very_likely_number_of_rounds_taken = compute_likelihood_value(self.cdf_rounds_taken, self.pvalue)
+        self.very_likely_models_removed = compute_likelihood_value(self.cdf_models_removed, self.pvalue)
+        self.expected_models_removed = compute_likelihood_value(self.cdf_models_removed, 0.5)
+
+    def __str__(self):
+        result = f"================ {self.desc}"
+        result += f"\n  {self.att_points} points attacking a target of {self.def_points} points"
+        result += f"\n  {int(self.pvalue*100)}% chance {int(self.very_likely_damage_output)} or more damage is dealt."
+        result += f"\n    Expected value for damage is {int(self.expected_damage_output)}."
+        result += f"\n    Expected value for damage wasted is {int(self.expected_damage_waste)}."
+        result += f"\n  {int(self.pvalue*100)}% chance {self.very_likely_number_of_rounds_taken:0.1f} rounds taken to remove a model."
+        result += f"\n  {int(self.pvalue*100)}% chance {int(self.very_likely_models_removed)} models or more are removed in a single round."
+        result += f"\n  {self.points_per_damage:0.2f} PPD"
+        return result
+
+def perform_full_analysis(attacker, defender, count, pvalue, description):
+    damage_cdf, _, damage_sequence, waste_data, _, _ = stats_loop(attacker=attacker, defender=defender, count=count)
+    return AnalysisResult(attacker=attacker, defender=defender, damage_cdf=damage_cdf, damage_sequence=damage_sequence, waste_data=waste_data, pvalue=pvalue, desc=description)
 
 # =================================================================================== #
 #       TESTS ONLY
 # =================================================================================== #
 def run_test():
-    # run unit tests
-    dmg_seq = [1, 2, 1, 2, 3, 4]
-    target = DStat(T=1, Sv=1, W=4)
-    cdf_rounds, cdf_removed = fold_to_models_removed_stats(dmg_seq, target)
-    print(cdf_removed)
-
-
     # run system tests
     ATTACKS = 1
     SKILL = 4
@@ -835,479 +859,4 @@ def run_test():
         print(f"actual, expected: {done:0.4f}, {expected:0.4f}  ({details})")
 
 if __name__ == "__main__":
-    if False:
-        run_test()
-    else:
-        # ==================================================================================== #
-        #       Imperial Guard assests
-        # ==================================================================================== #
-        leman_russ_tank = Model(
-            weapons=[
-                AStat(A=Dice(bias=3), BS_WS=4, S=10, AP=-1, D=3, description="Battle Cannon"),
-                AStat(A=Dice(sides=3), BS_WS=4, S=8, AP=-3, D=2, description="Plasma Cannon (supercharged)"),
-                AStat(A=Dice(sides=3), BS_WS=4, S=8, AP=-3, D=2, description="Plasma Cannon (supercharged)"),
-                AStat(A=3, BS_WS=4, S=5, AP=-1, D=2, description="Heavy Bolter"),
-                AStat(A=1, BS_WS=4, S=14, AP=-3, D=Dice(), description="Hunter-killer Missle"),
-            ], 
-            defence=DStat(T=11, Sv=2, W=13), 
-            pts=170, name="Leman Russ Battle Tank"
-        )
-        chimera = Model(
-            weapons=[
-                AStat(A=Dice(), BS_WS=4, S=5, AP=-1, D=1, description="Chimera Heavy Flamer") * Torrent,
-                AStat(A=3, BS_WS=4, S=5, AP=-1, D=2, description="Heavy Bolter") * SustainedHits_1,
-                AStat(A=3+3, BS_WS=4, S=4, AP=0, D=1, description="Heavy Stubber (rapid firing)"),
-                AStat(A=6+6, BS_WS=4, S=3, AP=0, D=1, description="Lasgun Array (rapid firing)"),
-                AStat(A=1, BS_WS=4, S=14, AP=-3, D=Dice(), description="Hunter-killer Missle"),
-            ],
-            defence=DStat(T=9, Sv=3, W=11),
-            pts=70, name="Chimera"
-        )
-
-        lasgun = AStat(A=2, BS_WS=4, S=3, AP=0, D=1, description="lasgun, King of Weapons (rapid firing)" )
-        laspistol = AStat(A=1, BS_WS=4, S=3, AP=0, D=1, description="laspistol" )
-        autocannon = AStat(A=2, BS_WS=4, S=3, AP=0, D=1, description="Autocannon" )
-        plasmagun = AStat(A=2, BS_WS=4, S=8, AP=-3, D=2, description="Plasma Gun (rapid firing, supercharged)" )
-        guardsmen_model = Model(weapons=lasgun, defence=DStat(T=3, Sv=5, W=1), pts=60/10, name="Guardsman")
-        guardsmen_plasma_model = Model(weapons=plasmagun, defence=DStat(T=3, Sv=5, W=1), pts=60/10, name="Guardsman")
-        guardsmen_sgt_model = Model(weapons=laspistol, defence=DStat(T=3, Sv=5, W=1), pts=60/10, name="Guardsman")
-        guardsmen_hvy_autcannon_model = Model(weapons=autocannon, defence=DStat(T=3, Sv=5, W=2), pts=2*60/10, name="Heavy Weapons Team")
-        guardsmen = Unit([
-            guardsmen_sgt_model,
-            guardsmen_hvy_autcannon_model, 
-            guardsmen_plasma_model,
-            guardsmen_plasma_model,
-            guardsmen_model,
-            guardsmen_model,
-            guardsmen_model,
-            guardsmen_model,
-            guardsmen_model,
-        ]) * PlusOneToHit
-
-        # ==================================================================================== #
-        #       Elf assests
-        # ==================================================================================== #
-        wraithguard_model_cannon = Model(
-            weapons=AStat(A=1, BS_WS=4, S=14, AP=-4, D=Dice(), description="Wraithcannon") * DevestatingWounds,
-            defence=DStat(T=7, Sv=2, W=3),
-            pts=190/5, name="Wraithguard with Cannon"
-        )
-        wraithguard_model_dscythe = Model(
-            weapons=AStat(A=Dice(), BS_WS=4, S=10, AP=-4, D=1, description="D-scythe") * DevestatingWounds,
-            defence=DStat(T=7, Sv=2, W=3),
-            pts=190/5, name="Wraithguard with Scythe"
-        )
-        wraithguard_cannon = Unit([wraithguard_model_cannon for _ in range(0,10)])
-        wraithguard_scythe = Unit([wraithguard_model_dscythe for _ in range(0,10)])
-
-        waveserpent = Model(
-            weapons=[
-                AStat(A=1, BS_WS=3, S=12, AP=-3, D=Dice(bias=2), description="Twin Bright Lance") * TwinLinked,
-                AStat(A=3, BS_WS=3, S=6, AP=-1, D=2, description="Shuriken Cannon") * SustainedHits_1,
-            ],
-            defence=DStat(T=9, Sv=3, W=13, Inv=5),
-            pts=120, name="Wave Serpent"
-        )
-
-
-
-
-        # Our boyz
-        # ==================================================================================== #
-        # ==================================================================================== #
-        #      Melee Boyz 
-        # ==================================================================================== #
-        # ==================================================================================== #
-        # Our vow
-        # TemplarVow = SustainedHits_1
-        TemplarVow = LethalHits
-        CrusadersWrath = AP_PlusOne * StrengthPlusOne
-        ChampStack = SustainedHits_1 * CriticalHit_5up # Champ has Sigismund's Seal and spend 1 CP to give them vow "Accept Any Challenge"
-
-
-        the_emperors_champion_sweep = Model(
-            weapons=AStat(A=10+1, BS_WS=2, S=6, AP=-2, D=1, description="Black Sword (Sweep) with Sigismund's Seal"),
-            defence=DStat(T=4, Sv=2, W=5, Inv=4, description="Black Plate"),
-            pts=75, name="The Emperor's Champion (Sweeping)"
-        )
-        the_emperors_champion_strike = Model(
-            weapons=AStat(A=6+1, BS_WS=2, S=8, AP=-3, D=3, description="Black Sword (Strike) with Sigismund's Seal"),
-            defence=DStat(T=4, Sv=2, W=5, Inv=4, description="Black Plate"),
-            pts=75, name="The Emperor's Champion (Striking)"
-        )
-
-        chaplain_gregor_ironmaw = Model(
-            weapons=AStat(A=5, BS_WS=2, S=6, AP=-1, D=2, description="Crozius Arcanum with Perdition's Edge") * StrengthPlusOne * AP_PlusOne * AttacksPlusOne,
-            defence=DStat(T=4, Sv=3, W=4, Inv=4),
-            pts=60+15, name="Chaplain Gregor Ironmaw, Orc Slayer"
-        )
-
-        # ==================================================================================== #
-        #               Redemptor Fists
-        # ==================================================================================== #
-
-        punching_redemptor_dread = Model(
-            weapons=AStat(A=5, BS_WS=3, S=12, AP=-2, D=3, description="Redemptor Fist"),
-            defence=DStat(T=10, Sv=2, W=12),
-            pts=210, name="Redemptor Dreadnought"
-        ) * TemplarVow
-        punching_redemptor_dread_wrath = punching_redemptor_dread * CrusadersWrath 
-
-        brutalis_talon_sweep = Model(
-            weapons=AStat(A=10, BS_WS=3, S=7, AP=-2, D=1, description="Talons (Sweep)") * TwinLinked,
-            defence=DStat(T=10, Sv=2, W=12),
-            pts=160, name="Brutalis Dreadnought"
-        ) * TemplarVow
-        brutalis_talon_strike = Model(
-            weapons=AStat(A=6, BS_WS=3, S=12, AP=-2, D=3, description="Talons (Strike)") * TwinLinked,
-            defence=DStat(T=10, Sv=2, W=12),
-            pts=160, name="Brutalis Dreadnought"
-        ) * TemplarVow
-        brutalis_talon_sweep_wrath = brutalis_talon_sweep * CrusadersWrath
-        brutalis_talon_strike_wrath = brutalis_talon_strike * CrusadersWrath
-
-        # ==================================================================================== #
-        #               Sword Brethern
-        # ==================================================================================== #
-
-        sw_power_weapon = AStat(A=4, BS_WS=3, S=5, AP=-2, D=1, description="Power Weapon")
-        sw_chainsword = AStat(A=5, BS_WS=3, S=4, AP=-1, D=1, description="Chainsword")
-        sw_thammer = AStat(A=3, BS_WS=4, S=8, AP=-2, D=2, description="Thunder Hammer") * DevestatingWounds
-        sw_lclaws = AStat(A=5, BS_WS=3, S=5, AP=-2, D=1, description="Lightning Claws") * TwinLinked
-        sw_mastercraft_psword = AStat(A=4, BS_WS=2, S=5, AP=-2, D=2, description="Master-crafted Power Weapon")
-
-        sw_defence = DStat(T=4, Sv=3, W=3)
-
-        sword_brethern = Unit([
-            Model(weapons=sw_power_weapon, defence=sw_defence, pts=150/5, name="Primaris Sword Brother"),
-            Model(weapons=sw_power_weapon, defence=sw_defence, pts=150/5, name="Primaris Sword Brother"),
-            Model(weapons=sw_thammer, defence=sw_defence, pts=150/5, name="Primaris Sword Brother"),
-            Model(weapons=sw_lclaws, defence=sw_defence, pts=150/5, name="Primaris Sword Brother"),
-            Model(weapons=sw_mastercraft_psword, defence=sw_defence, pts=150/5, name="Sword Brother Castellan"),
-        ]) * TemplarVow * DamagePlusOne
-        sword_brethern_wrath = sword_brethern * CrusadersWrath
-
-        # led by The Emperor's Champion
-        sword_brethern_ld_by_champ = sword_brethern + the_emperors_champion_strike
-        sword_brethern_ld_by_champ_wrath = sword_brethern_ld_by_champ * CrusadersWrath
-        sword_brethern_ld_by_champ_stack = sword_brethern_ld_by_champ * ChampStack
-        sword_brethern_ld_by_champ_wrath_stack = sword_brethern_ld_by_champ_wrath * ChampStack
-
-        # led by Gregor Ironmaw, Orc Slayer
-        sword_brethern_ld_by_gregor = (sword_brethern + chaplain_gregor_ironmaw) * PlusOneToWound
-        sword_brethern_ld_by_gregor_wrath = sword_brethern_ld_by_gregor * CrusadersWrath
-
-        # ==================================================================================== #
-        #               Primaris Crusader Squad
-        # ==================================================================================== #
-
-        pric_chainsword = AStat(A=5, BS_WS=3, S=4, AP=-1, D=1, description="Chainsword")
-        pric_powerfist = AStat(A=3, BS_WS=3, S=8, AP=-2, D=2, description="Power Fist")
-        pric_powerweapon = AStat(A=3, BS_WS=3, S=5, AP=-2, D=1, description="Power Weapon")
-        pric_def_neophyte = DStat(T=4, Sv=4, W=2)
-        pric_def_initiate = DStat(T=4, Sv=3, W=2)
-
-        pri_crusaders = Unit([
-            Model(weapons=pric_powerweapon, defence=pric_def_initiate, pts=140/10, name="Primaris Sword Brother"),
-            Model(weapons=pric_chainsword, defence=pric_def_neophyte, pts=140/10, name="Primais Neophyte"),
-            Model(weapons=pric_chainsword, defence=pric_def_neophyte, pts=140/10, name="Primais Neophyte"),
-            Model(weapons=pric_chainsword, defence=pric_def_neophyte, pts=140/10, name="Primais Neophyte"),
-            Model(weapons=pric_chainsword, defence=pric_def_neophyte, pts=140/10, name="Primais Neophyte"),
-            Model(weapons=pric_chainsword, defence=pric_def_initiate, pts=140/10, name="Primaris Initiate"),
-            Model(weapons=pric_chainsword, defence=pric_def_initiate, pts=140/10, name="Primaris Initiate"),
-            Model(weapons=pric_chainsword, defence=pric_def_initiate, pts=140/10, name="Primaris Initiate"),
-            Model(weapons=pric_powerfist, defence=pric_def_initiate, pts=140/10, name="Primaris Initiate"),
-            Model(weapons=pric_powerfist, defence=pric_def_initiate, pts=140/10, name="Primaris Initiate"),
-        ]) * TemplarVow
-
-        # led by Gregor Ironmaw, Orc Slayer
-        pri_crusaders_ld_by_gregor = (pri_crusaders + chaplain_gregor_ironmaw) * PlusOneToWound
-        pri_crusaders_ld_by_gregor_wrath = pri_crusaders_ld_by_gregor * CrusadersWrath
-
-        # led by The Emperor's Champion
-        pri_crusaders_ld_by_champ = (pri_crusaders + the_emperors_champion_strike)
-        pri_crusaders_ld_by_champ_wrath = pri_crusaders_ld_by_champ * CrusadersWrath
-        pri_crusaders_ld_by_champ_stack = pri_crusaders_ld_by_champ * ChampStack
-        pri_crusaders_ld_by_champ_wrath_stack = pri_crusaders_ld_by_champ_wrath * ChampStack
-
-        # ==================================================================================== #
-        #               Assault Intercessors
-        # ==================================================================================== #
-
-        ai_chainsword = AStat(A=4, BS_WS=3, S=4, AP=-1, D=1, description="Astartes Chainsword")
-        ai_defence = sw_defence 
-
-        assault_intercessors = Unit([
-            Model(weapons=ai_chainsword, defence=ai_defence, pts=75/5, name="Assault Intercessor"),
-            Model(weapons=ai_chainsword, defence=ai_defence, pts=75/5, name="Assault Intercessor"),
-            Model(weapons=ai_chainsword, defence=ai_defence, pts=75/5, name="Assault Intercessor"),
-            Model(weapons=ai_chainsword, defence=ai_defence, pts=75/5, name="Assault Intercessor"),
-            Model(weapons=ai_chainsword, defence=ai_defence, pts=75/5, name="Assault Intercessor"),
-            Model(weapons=ai_chainsword, defence=ai_defence, pts=75/5, name="Assault Intercessor"),
-            Model(weapons=ai_chainsword, defence=ai_defence, pts=75/5, name="Assault Intercessor"),
-            Model(weapons=ai_chainsword, defence=ai_defence, pts=75/5, name="Assault Intercessor"),
-            Model(weapons=ai_chainsword, defence=ai_defence, pts=75/5, name="Assault Intercessor"),
-            Model(weapons=ai_chainsword, defence=ai_defence, pts=75/5, name="Assault Intercessor Sergeant"),
-        ]) * TemplarVow * RerollWoundsOne
-
-        # led by Gregor Ironmaw, Orc Slayer
-        assault_intercessors_ld_by_gregor = (assault_intercessors + chaplain_gregor_ironmaw) * PlusOneToWound
-        assault_intercessors_ld_by_gregor_wrath = assault_intercessors_ld_by_gregor * CrusadersWrath
-
-        # led by The Emperor's Champion
-        assault_intercessors_ld_by_champ = (assault_intercessors + the_emperors_champion_strike)
-        assault_intercessors_ld_by_champ_wrath = assault_intercessors_ld_by_champ * CrusadersWrath
-
-        # ==================================================================================== #
-        #       Terminator Assault Squad
-        # ==================================================================================== #
-        TerminatorArmour = DStat(T=5, Sv=2, W=3, Inv=4, description="Blessed Terminator Armour")
-        TerminatorArmour_wShield = DStat(T=5, Sv=2, W=4, Inv=4, description="Blessed Terminator Armour with Storm Shield")
-
-        assault_termie_with_hammer_shield = Model(
-            weapons=AStat(A=3, BS_WS=4, S=8, AP=-2, D=2, description="Thunder Hammmer") * DevestatingWounds,
-            defence=TerminatorArmour_wShield,
-            pts=185/5,
-            name="Assault Terminator")
-        assault_termie_with_lclaws = Model(
-            weapons=AStat(A=5, BS_WS=3, S=5, AP=-2, D=1) * TwinLinked,
-            defence=TerminatorArmour,
-            pts=185/5,
-            name="Assault Terminator")
-
-        assault_termies_0_5 = Unit([
-            assault_termie_with_lclaws,
-            assault_termie_with_lclaws,
-            assault_termie_with_lclaws,
-            assault_termie_with_lclaws,
-            assault_termie_with_lclaws,
-        ]) * TemplarVow
-        assault_termies_0_5_wrath = assault_termies_0_5 * CrusadersWrath
-
-        assault_termies_5_0 = Unit([
-            assault_termie_with_hammer_shield,
-            assault_termie_with_hammer_shield,
-            assault_termie_with_hammer_shield,
-            assault_termie_with_hammer_shield,
-            assault_termie_with_hammer_shield,
-        ]) * TemplarVow
-        assault_termies_5_0_wrath = assault_termies_5_0 * CrusadersWrath
-
-        assault_termies_3_2 = Unit([
-            assault_termie_with_hammer_shield,
-            assault_termie_with_hammer_shield,
-            assault_termie_with_hammer_shield,
-            assault_termie_with_lclaws,
-            assault_termie_with_lclaws,
-        ]) * TemplarVow
-        assault_termies_3_2_wrath = assault_termies_3_2 * CrusadersWrath
-
-        assault_termies_2_3 = Unit([
-            assault_termie_with_hammer_shield,
-            assault_termie_with_hammer_shield,
-            assault_termie_with_lclaws,
-            assault_termie_with_lclaws,
-            assault_termie_with_lclaws,
-        ]) * TemplarVow
-        assault_termies_2_3_wrath = assault_termies_2_3 * CrusadersWrath
-
-
-
-            
-        # ==================================================================================== #
-        melee_boyz = {
-            # 'chaplain_gregor_ironmaw': chaplain_gregor_ironmaw * TemplarVow,
-            # 'the_emperors_champion_strike': the_emperors_champion_strike * TemplarVow,
-            # 'the_emperors_champion_sweep': the_emperors_champion_sweep * TemplarVow,
-
-            # 'punching_redemptor_dread': punching_redemptor_dread,
-            # 'punching_redemptor_dread_wrath': punching_redemptor_dread_wrath,
-            # 'brutalis_talon_sweep': brutalis_talon_sweep,
-            # 'brutalis_talon_sweep_wrath': brutalis_talon_sweep_wrath,
-            # 'brutalis_talon_strike': brutalis_talon_strike,
-            # 'brutalis_talon_strike_wrath': brutalis_talon_strike_wrath,
-
-            # 'sword_brethern': sword_brethern,
-            # 'sword_brethern_wrath': sword_brethern_wrath,
-            # 'sword_brethern_ld_by_gregor (0CP)': sword_brethern_ld_by_gregor,
-            # 'sword_brethern_ld_by_gregor_wrath (1CP)': sword_brethern_ld_by_gregor_wrath,
-            # 'sword_brethern_ld_by_champ (0CP)': sword_brethern_ld_by_champ,
-            # 'sword_brethern_ld_by_champ_wrath (1CP)': sword_brethern_ld_by_champ_wrath,
-            # 'sword_brethern_ld_by_champ_stack (1CP)': sword_brethern_ld_by_champ_stack,
-            # 'sword_brethern_ld_by_champ_wrath_stack (2CP)': sword_brethern_ld_by_champ_wrath_stack,
-
-            # 'pri_crusaders': pri_crusaders,
-            # 'pri_crusaders_ld_by_gregor': pri_crusaders_ld_by_gregor,
-            # 'pri_crusaders_ld_by_gregor_wrath': pri_crusaders_ld_by_gregor_wrath,
-            # 'pri_crusaders_ld_by_champ': pri_crusaders_ld_by_champ,
-            # 'pri_crusaders_ld_by_champ_wrath': pri_crusaders_ld_by_champ_wrath,
-            # 'pri_crusaders_ld_by_champ_stack': pri_crusaders_ld_by_champ_stack,
-            # 'pri_crusaders_ld_by_champ_wrath_stack': pri_crusaders_ld_by_champ_wrath_stack,
-
-            # 'assault_intercessors': assault_intercessors,
-            # 'assault_intercessors_ld_by_gregor': assault_intercessors_ld_by_gregor,
-            # 'assault_intercessors_ld_by_gregor_wrath': assault_intercessors_ld_by_gregor_wrath,
-            # 'assault_intercessors_ld_by_champ': assault_intercessors_ld_by_champ,
-            # 'assault_intercessors_ld_by_champ_wrath': assault_intercessors_ld_by_champ_wrath,
-
-            # 'assault_termies_0_5': assault_termies_0_5,
-            'assault_termies_0_5_wrath': assault_termies_0_5_wrath,
-            # 'assault_termies_5_0': assault_termies_5_0,
-            'assault_termies_5_0_wrath': assault_termies_5_0_wrath,
-            # 'assault_termies_3_2': assault_termies_3_2,
-            'assault_termies_3_2_wrath': assault_termies_3_2_wrath,
-            # 'assault_termies_2_3': assault_termies_2_3,
-            'assault_termies_2_3_wrath': assault_termies_2_3_wrath,
-        }
-
-        # ==================================================================================== #
-        # ==================================================================================== #
-        #       Ranged Boyz
-        # ==================================================================================== #
-        # ==================================================================================== #
-        BiologisFireDicipline = LethalHits * SustainedHits_1 * CriticalHit_5up
-        TotalObliteration = RerollHits  * RerollWounds * Reroll_D6_Damage
-        melta_rifle = AStat(A=1, BS_WS=3, S=9, AP=-4, D=Dice())
-        multi_melta = AStat(A=2, BS_WS=4, S=9, AP=-4, D=Dice())
-        melta_rifle_melta_range = AStat(A=1, BS_WS=3, S=9, AP=-4, D=Dice(bias=2))
-        multi_melta_melta_range = AStat(A=2, BS_WS=4, S=9, AP=-4, D=Dice(bias=2))
-        eradicator_gravis = DStat(T=6, Sv=3, W=3, description="Eradicator Gravis")
-
-        eradicators = Unit([
-            Model(weapons=melta_rifle, defence=eradicator_gravis, pts=95/3, name="Eradicator"),
-            Model(weapons=melta_rifle, defence=eradicator_gravis, pts=95/3, name="Eradicator"),
-            Model(weapons=multi_melta, defence=eradicator_gravis, pts=95/3, name="Eradicator"),
-        ])
-        eradicators_at_vehicle = eradicators * TotalObliteration
-        full_squad_eradicators = Unit([
-            Model(weapons=melta_rifle, defence=eradicator_gravis, pts=95/3, name="Eradicator"),
-            Model(weapons=melta_rifle, defence=eradicator_gravis, pts=95/3, name="Eradicator"),
-            Model(weapons=melta_rifle, defence=eradicator_gravis, pts=95/3, name="Eradicator"),
-            Model(weapons=melta_rifle, defence=eradicator_gravis, pts=95/3, name="Eradicator"),
-            Model(weapons=multi_melta, defence=eradicator_gravis, pts=95/3, name="Eradicator"),
-            Model(weapons=multi_melta, defence=eradicator_gravis, pts=95/3, name="Eradicator"),
-        ])
-        full_squad_eradicators_at_vehicle = full_squad_eradicators * TotalObliteration
-        # Eradicators + Apothecary Biologis with Fire Discipline = A lot of hurt
-        full_eradicators_firedis_stack = full_squad_eradicators * BiologisFireDicipline
-        full_eradicators_firedis_stack_at_vehicle = full_squad_eradicators_at_vehicle * BiologisFireDicipline
-
-        blastadd = 0
-        ven_brother_grammituis = Model(
-            weapons=[
-                AStat(A=Dice(), BS_WS=3, S=5, AP=-1, D=1, description="Heavy Flamer") * Torrent,
-                AStat(A=12, BS_WS=3, S=6, AP=0, D=1, description="Heavy Onslaught Gatling Cannon") * DevestatingWounds,
-                AStat(A=Dice(bias=blastadd), BS_WS=3, S=4, AP=0, D=1, description="Twin Fragstorm Grenade Launcher") * TwinLinked,
-            ],
-            defence=DStat(T=10, Sv=2, W=12),
-            pts=210, name="Venerable Brother Grammituis"
-        )
-
-        redemptor_dread = Model(
-            weapons=[
-                AStat(A=Dice(), BS_WS=3, S=5, AP=-1, D=1, description="Heavy Flamer") * Torrent,
-                AStat(A=Dice(bias=blastadd), BS_WS=3, S=4, AP=0, D=1, description="Twin Fragstorm Grenade Launcher") * TwinLinked,
-                AStat(A=Dice(bias=1+blastadd), BS_WS=3, S=9, AP=-4, D=3, description="Macro Plasma Incinerator"),
-                AStat(A=Dice(sides=3), BS_WS=3, S=8, AP=-1, D=2, description="Icarus Rocket Pod"),
-            ],
-            defence=DStat(T=10, Sv=2, W=12),
-            pts=210, name="Redemptor Dreadnought"
-        )
-
-        ranged_boyz = {
-            'eradicators': eradicators,
-            'eradicators_at_vehicle': eradicators_at_vehicle,
-            'full_squad_eradicators': full_squad_eradicators,
-            'full_squad_eradicators_at_vehicle': full_squad_eradicators_at_vehicle,
-            'redemptor_dread': redemptor_dread,
-            'ven_brother_grammituis': ven_brother_grammituis,
-            'full_eradicators_firedis_stack': full_eradicators_firedis_stack,
-            'full_eradicators_firedis_stack_at_vehicle': full_eradicators_firedis_stack_at_vehicle,
-            'leman_russ': leman_russ_tank,
-            'wraithguard_cannon': wraithguard_cannon,
-            'wraithguard_scythe': wraithguard_scythe,
-            'chimera': chimera,
-            'guardsmen': guardsmen,
-        }
-
-
-
-
-
-
-        # ==================================================================================== #
-        #       Statistical Reports
-        # ==================================================================================== #
-        # I want a plot of the probability that you score N or more damage
-
-        DEFENDER_OPTIONS = {
-            'chimera': chimera,
-            'leman_russ': leman_russ_tank,
-            'wraithguard_cannon': wraithguard_cannon,
-            'wraithguard_scythe': wraithguard_scythe,
-            'waveserpent': waveserpent,
-            'guardsmen': guardsmen,
-            'eradicators': eradicators,
-            'redemptor_dread': redemptor_dread,
-            'ven_brother_grammituis': ven_brother_grammituis,
-        }
-        ATTACKER_OPTIONS = {
-            # 'termies': terminator_assault_sqd_dict,
-            # 'pri_crusaders': pri_cru_dict,
-            # 'a_inter': assault_inter_dict,
-            # 'sword_bros': sword_bros_dict,
-            'ranged': ranged_boyz,
-            'melee': melee_boyz,
-            # 'chars': characters,
-            # 'redemptor_boyz': redemptor_boyz,
-        }
-        
-        par = argparse.ArgumentParser(description='Warhammer 40k 10th Ed. Math Hammer')
-        par.add_argument('ATTACKER', type=str, choices=ATTACKER_OPTIONS.keys(), help='Attacker group to run in simulation.')
-        par.add_argument('DEFENDER', type=str, choices=DEFENDER_OPTIONS.keys(), help='Defender to run in simulation.')
-        par.add_argument('--count', type=str, help=f'Number of sequences to run.  Default is {DEFAULT_COUNT}.', default=DEFAULT_COUNT)
-        par.add_argument('--verylikely', type=float, help='Threshold, on range [0,1], that is considered "Very Likely". Default is 5/6.', default=5/6.0)
-
-        args = par.parse_args()
-
-        the_list = ATTACKER_OPTIONS[args.ATTACKER]
-        the_target = DEFENDER_OPTIONS[args.DEFENDER]
-
-        h = plt.figure(1)
-
-        VERY_LIKELY = args.verylikely
-        for k in the_list:
-            data, _, damage_sequence, waste_data, _, _ = stats_loop(attacker=the_list[k], defender=the_target, count=args.count)
-
-            def compute_likelihood_value(data, thresh):
-                xdata = np.asarray([ float(x) for x in range(0,len(data)) ])
-                return np.interp(thresh, data[::-1], xdata[::-1])
-
-            very_likely_damage_output = compute_likelihood_value(data, VERY_LIKELY)
-            expected_damage_output = compute_likelihood_value(data, 0.5)
-            expected_damage_waste = compute_likelihood_value(waste_data, 0.5)
-
-            # sum the points for each side
-            def_points = the_target.points
-            att_points = the_list[k].points
-            # potential relative to point cost
-            points_per_damage = att_points / very_likely_damage_output
-            
-            # models-removed-per-round and rounds-taken-to-remove-model
-            cdf_rounds_taken, cdf_models_removed = fold_to_models_removed_stats(damage_sequence, the_target)
-            very_likely_number_of_rounds_taken = compute_likelihood_value(cdf_rounds_taken, VERY_LIKELY)
-            very_likely_models_removed = compute_likelihood_value(cdf_models_removed, VERY_LIKELY)
-            expected_models_removed = compute_likelihood_value(cdf_models_removed, 0.5)
-
-            print(f"================ {k} ")
-            print(f"  {att_points} points attacking a target of {def_points} points")
-            print(f"  {int(VERY_LIKELY*100)}% chance {int(very_likely_damage_output)} or more damage is dealt.")
-            print(f"    Expected value for damage is {int(expected_damage_output)}.")
-            print(f"    Expected value for damage wasted is {int(expected_damage_waste)}.")
-            print(f"  {int(VERY_LIKELY*100)}% chance {very_likely_number_of_rounds_taken:0.1f} rounds taken to remove a model.")
-            print(f"  {int(VERY_LIKELY*100)}% chance {int(very_likely_models_removed)} models or more are removed in a single round.")
-            print(f"  {points_per_damage:0.2f} PPD")
-            plt.plot(data)
-        plt.legend(the_list.keys())
-        plt.title(f"versus {the_target}")
-        plt.show()
+    run_test()
