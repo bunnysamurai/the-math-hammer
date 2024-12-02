@@ -48,3 +48,9 @@ guardsmen = Unit([
     guardsmen_model,
     guardsmen_model,
 ]) * PlusOneToHit
+
+
+assets = {'leman_russ': leman_russ_tank,
+          'chimera': chimera,
+          'infantry_squad': guardsmen
+          }

@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import dill as pickle
 import matplotlib.pyplot as plt
 import argparse
 
@@ -119,19 +120,21 @@ if __name__ == "__main__":
     print("Working...")
 
     models_removed = {}
+    damage_done = {}
     for k in the_list:
         result = perform_full_analysis(attacker=the_list[k], defender=the_target, count=args.count, pvalue=args.verylikely, description=k)
         models_removed[k] = result.very_likely_models_removed
+        damage_done[k] = result.very_likely_damage_output
         plt.plot(result.damage_cdf)
 
 
-    def print_report(modl_dict, likely):
-        print(f"{int(likely*100)}% chance N models removed:")
-        # result += f"\n  {int(self.pvalue*100)}% chance {int(self.very_likely_models_removed)} models or more are removed in a single round."
+    def print_report(modl_dict, header):
+        print(header)
         for k in modl_dict:
             print(f"{int(modl_dict[k]): 3d} : {k}")
 
-    print_report(models_removed, args.verylikely)
+    print_report(models_removed, f"{int(args.verylikely*100)}% chance M models removed:")
+    print_report(damage_done, f"{int(args.verylikely*100)}% chance N damage done:")
 
     plt.legend(the_list.keys())
     plt.title(f"versus {the_target}")

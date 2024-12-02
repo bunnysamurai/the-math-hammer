@@ -55,6 +55,12 @@ brutalis_talon_strike = Model(
 brutalis_talon_sweep_wrath = brutalis_talon_sweep * CrusadersWrath
 brutalis_talon_strike_wrath = brutalis_talon_strike * CrusadersWrath
 
+assets = {'emperors_champ_sweep': the_emperors_champion_sweep,
+          'emperors_champ': the_emperors_champion_strike,
+          'gregor_ironmaw': chaplain_gregor_ironmaw,
+          'melee_redemptor_dread': punching_redemptor_dread,
+          }
+
 # ==================================================================================== #
 #               Sword Brethern
 # ==================================================================================== #
@@ -67,13 +73,15 @@ sw_mastercraft_psword = AStat(A=4, BS_WS=2, S=5, AP=-2, D=2, description="Master
 
 sw_defence = DStat(T=4, Sv=3, W=3)
 
-sword_brethern = Unit([
-    Model(weapons=sw_power_weapon, defence=sw_defence, pts=150/5, name="Primaris Sword Brother"),
-    Model(weapons=sw_power_weapon, defence=sw_defence, pts=150/5, name="Primaris Sword Brother"),
-    Model(weapons=sw_thammer, defence=sw_defence, pts=150/5, name="Primaris Sword Brother"),
-    Model(weapons=sw_lclaws, defence=sw_defence, pts=150/5, name="Primaris Sword Brother"),
-    Model(weapons=sw_mastercraft_psword, defence=sw_defence, pts=150/5, name="Sword Brother Castellan"),
-]) * TemplarVow * DamagePlusOne
+sword_brethern = Unit(
+    model_list = [
+        Model(weapons=sw_power_weapon, defence=sw_defence, pts=150/5, name="Primaris Sword Brother"),
+        Model(weapons=sw_power_weapon, defence=sw_defence, pts=150/5, name="Primaris Sword Brother"),
+        Model(weapons=sw_thammer, defence=sw_defence, pts=150/5, name="Primaris Sword Brother"),
+        Model(weapons=sw_lclaws, defence=sw_defence, pts=150/5, name="Primaris Sword Brother"),
+        Model(weapons=sw_mastercraft_psword, defence=sw_defence, pts=150/5, name="Sword Brother Castellan"),
+    ], 
+    name="Sword Bretheren") * TemplarVow * DamagePlusOne
 sword_brethern_wrath = sword_brethern * CrusadersWrath
 
 # led by The Emperor's Champion

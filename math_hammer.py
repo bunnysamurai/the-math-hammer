@@ -432,6 +432,19 @@ def assign_char(phase_str, value):
         return state
     return fun
 
+class Modifier():
+    def __init__(self, sequence, functor, id=None):
+        self.seq = [sequence]
+        self.func = [functor]
+        self.id = [id]
+
+    def __mul__(self, other):
+        result = copy.deepcopy(self)
+        result.seq += other.seq
+        result.func += other.func
+        result.id += other.id
+        return result
+
 class AStat():
     def __init__(self, A, BS_WS, S, AP, D, description="AStat"):
         self.attacks = A
@@ -454,14 +467,31 @@ class AStat():
                           'save': [identity()], 
                           'damage': [identity()],
                           'fnp': [identity()]}
+        # solely for stringifying (json serialization)
+        self.modifiers_ids = {
+                'preamble': [],
+                'attacks': [],
+                'hit': [], 
+                'strength': [],
+                'toughness': [],
+                'wound': [], 
+                'armourpen': [],
+                'invuln': [], 
+                'sv': [], 
+                'save': [], 
+                'damage': [],
+                'fnp': []}
 
-    def __mul__(self, other):
+
+    def __mul__(self, other: Modifier):
         result = copy.deepcopy(self)
         try:
-            for mod, seq in zip(other.func, other.seq):
+            for mod, seq, id in zip(other.func, other.seq, other.id):
                 result.modifiers[seq].append(mod)
+                result.modifiers_ids[seq].append(id)
         except Exception as e:
             result.modifiers[other.seq].append(other.func)
+            result.modifiers_ids[other.seq].append(other.id)
         return result
 
     def __str__(self):
@@ -489,6 +519,20 @@ class DStat():
                           'save': [identity()],
                           'damage': [identity()],
                           'fnp': [identity()]}
+        # solely for stringifying (json serialization)
+        self.modifiers_ids = {
+                'preamble': [],
+                'attacks': [],
+                'hit': [], 
+                'strength': [],
+                'toughness': [],
+                'wound': [], 
+                'armourpen': [],
+                'invuln': [], 
+                'sv': [], 
+                'save': [], 
+                'damage': [],
+                'fnp': []}
 
     def __str__(self):
         result = f"{self.description}(T:{self.toughness} Sv:{self.save}+"
@@ -500,16 +544,18 @@ class DStat():
         return result
 
 
-    def __mul__(self, other):
+    def __mul__(self, other: Modifier):
         result = copy.deepcopy(self)
         try:
-            for mod in other.func:
-                result.modifiers[other.seq].append(mod)
+            for mod, seq, id in zip(other.func, other.seq, other.id):
+                result.modifiers[seq].append(mod)
+                result.modifiers_ids[seq].append(id)
         except Exception as e:
             result.modifiers[other.seq].append(other.func)
+            result.modifiers_ids[other.seq].append(other.id)
         return result
 
-    def __sub__(self, attacker):
+    def __sub__(self, attacker: AStat):
         if type(attacker) is not AStat:
             raise ValueError("RHS must be an attacking statistic")
 
@@ -591,7 +637,7 @@ class Model():
         return result
 
 class Unit():
-    def __init__(self, model_list: list):
+    def __init__(self, model_list: list, name=None):
         '''
             unit_wounds is the total amount of wounds this unit has
             wounds is the **majority** wounds characteristic among models in the unit
@@ -603,6 +649,7 @@ class Unit():
         self.unit_modifiers = []
         # the aggregate stats
         self.unit_wounds, self.wounds, self.points = self.__aggregate_model_stats()
+        self.name = name
 
 
     def __aggregate_model_stats(self):
@@ -662,25 +709,11 @@ class Unit():
         ''' the rules generally are:
             1. use majority toughness
             2. use best save
+            3. bodyguard models before leader
         '''
         # TODO for now, we'll just use the first model in the unit
         return self.models[0]
         
-
-
-class Modifier():
-    def __init__(self, sequence, functor):
-        self.seq = [sequence]
-        self.func = [functor]
-
-    def __mul__(self, other):
-        result = copy.deepcopy(self)
-        result.seq += other.seq
-        result.func += other.func
-        return result
-
-
-    
 Torrent = Modifier(sequence='hit', functor=modifier_always_succeed('hit'))
 RerollWounds = Modifier(sequence='wound', functor=modifier_reroll_fails('wound'))
 RerollWoundsOne = Modifier(sequence='wound', functor=modifier_reroll_ones('wound'))
@@ -689,6 +722,8 @@ RerollHits = Modifier(sequence='hit', functor=modifier_reroll_fails('hit'))
 RerollHitsOne = Modifier(sequence='hit', functor=modifier_reroll_ones('hit'))
 Reroll_D6_Damage = Modifier(sequence='damage', functor=modifier_reroll_if_less_than(sequence='damage', threshold=4))
 Reroll_D3_Damage = Modifier(sequence='damage', functor=modifier_reroll_if_less_than(sequence='damage', threshold=2))
+Reroll_D3_Attacks = Modifier(sequence='attacks', functor=modifier_reroll_if_less_than(sequence='attacks', threshold=2))
+Reroll_D6_Attacks = Modifier(sequence='attacks', functor=modifier_reroll_if_less_than(sequence='attacks', threshold=4))
 PlusOneToWound = Modifier(sequence='wound', functor=modifier_roll_add_one('wound'))
 PlusOneToHit = Modifier(sequence='hit', functor=modifier_roll_add_one('hit'))
 LethalHits = Modifier(sequence='hit', functor=modifier_lethal_hits())
@@ -838,8 +873,9 @@ def run_test():
         ( Model(TestModelGun, TestModelArmour) * Torrent , 0.1667, 'Torrent' ),
         ( Model(TestModelVarD, TestModelArmour) , 2 * 0.0833, 'D3 Damage' ),
         ( Model(TestModelVarD, TestModelArmour) * DevestatingWounds, 0.25, 'D3 Damage with Devestating' ),
-        ( Model(TestModelVarA, TestModelArmour) , 2 * 0.0833, 'D3 Attacks' ),
         ( Model(TestModelVarD, TestModelArmour) * Reroll_D3_Damage, 2.333333 * 0.0833, 'Rerolling D3 Damage'),
+        ( Model(TestModelVarA, TestModelArmour) , 2 * 0.0833, 'D3 Attacks' ),
+        ( Model(TestModelVarA, TestModelArmour) * Reroll_D3_Attacks, 2.333333 * 0.0833, 'Rerolling D3 Attacks' ),
         ( Model(TestModelGun, TestModelArmour) * LethalHits , 0.1389, 'Lethal Hits' ),
         ( Model(TestModelGun, TestModelArmour) * SustainedHits_1 , 0.1111, 'Sustained Hits 1' ),
         ( Model(TestModelGun, TestModelArmour) * SustainedHits_1 * CriticalHit_5up, 0.1389, 'Sustained Hits 1, CritHit 5+' ),
