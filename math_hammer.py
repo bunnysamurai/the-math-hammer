@@ -7,6 +7,10 @@ from enum import Enum
 import scipy
 import scipy.stats
 
+
+MELEE_WEAPON_RANGE = 0
+MELEE_RANGE_INCHES = 1
+
 class CharState(Enum):
     DiceList = 1
     Dice = 2
@@ -446,12 +450,13 @@ class Modifier():
         return result
 
 class AStat():
-    def __init__(self, A, BS_WS, S, AP, D, description="AStat"):
+    def __init__(self, A, BS_WS, S, AP, D, Range, description="AStat"):
         self.attacks = A
         self.skill = BS_WS
         self.strength = S
         self.armourpen = AP
         self.damage = D
+        self.range = Range
         self.description = description
 
         # we only interact with the .char field
@@ -583,12 +588,13 @@ class DStat():
         return state.resolve()
         
 class Model():
-    def __init__(self, weapons, defence, pts="N/A", name="N/A"):
+    def __init__(self, weapons, defence, position=0, pts="N/A", name="N/A"):
         self.weapons = copy.deepcopy(weapons)
         self.defence = defence
         self.name = name
         self.points = pts
         self.wounds = self.defence.wounds
+        self.pos = position
 
     # TODO is this a bad idea?  Maybe!
     def __div__(self, other):
@@ -607,14 +613,29 @@ class Model():
             model - model
             model - unit
         '''
+
+        def check_if_in_range(attack_pos, defend_pos, attack_wpn):
+            # for melee, return true only if they are equal
+            # for ranged, return true if distance is less than range AND positions are not equal
+            result = False
+            sep_dis = abs(attack_pos - defend_pos)
+            if( attack_wpn.range == MELEE_WEAPON_RANGE ): # TODO make more explicit that melee weapons are designated by a range of "0 inches"
+                result = sep_dis < MELEE_RANGE_INCHES
+            else:
+                result = sep_dis <= attack_wpn.range and sep_dis >= MELEE_RANGE_INCHES
+            return result
+
         def handle_model(att_model):
             try:
                 acc = np.zeros((2,))
                 for wpn in att_model.weapons:
-                    acc += self.defence - wpn
+                    acc += 0 if not check_if_in_range(att_model.pos, self.pos, wpn) else self.defence - wpn
                 return acc
             except Exception as e:
-                return self.defence - att_model.weapons
+                if not check_if_in_range(att_model.pos, self.pos, att_model.weapons):
+                    return 0
+                else:
+                    return self.defence - att_model.weapons
 
         try:
             acc = np.zeros((2,))
@@ -855,41 +876,53 @@ def run_test():
     DAMAGE = 1
     VARDAMAGE = Dice(sides=3)
     VARATTACKS = Dice(sides=3)
+    ATT_POS_INCHES = 0
+    WPN_RANGE_INCHES = 24
 
     TOUGHNESS = 5
     SAVE = 4
     WOUNDS = 6
+    DEF_POS_INCHES = 2 
 
     TestModelArmour = DStat(T=TOUGHNESS, Sv=SAVE, W=WOUNDS)
-    TestModelGun = AStat(A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE)
-    TestModelVarD = AStat(A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=VARDAMAGE)
-    TestModelVarA = AStat(A=VARATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE)
+    TestModelGun = AStat(A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE, Range=WPN_RANGE_INCHES)
+    TestModelVarD = AStat(A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=VARDAMAGE, Range=WPN_RANGE_INCHES)
+    TestModelVarA = AStat(A=VARATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE, Range=WPN_RANGE_INCHES)
 
-    test_def = Model(TestModelGun, TestModelArmour)
+    test_def = Model(weapons=TestModelGun, defence=TestModelArmour, position=DEF_POS_INCHES)
 
     attackers = [
-        ( Model(TestModelGun, TestModelArmour) , 0.0833, 'Nominal' ),
-        ( Model([TestModelGun, TestModelGun, TestModelGun], TestModelArmour) , 3*0.0833, 'Nominal*3' ),
-        ( Model(TestModelGun, TestModelArmour) * Torrent , 0.1667, 'Torrent' ),
-        ( Model(TestModelVarD, TestModelArmour) , 2 * 0.0833, 'D3 Damage' ),
-        ( Model(TestModelVarD, TestModelArmour) * DevestatingWounds, 0.25, 'D3 Damage with Devestating' ),
-        ( Model(TestModelVarD, TestModelArmour) * Reroll_D3_Damage, 2.333333 * 0.0833, 'Rerolling D3 Damage'),
-        ( Model(TestModelVarA, TestModelArmour) , 2 * 0.0833, 'D3 Attacks' ),
-        ( Model(TestModelVarA, TestModelArmour) * Reroll_D3_Attacks, 2.333333 * 0.0833, 'Rerolling D3 Attacks' ),
-        ( Model(TestModelGun, TestModelArmour) * LethalHits , 0.1389, 'Lethal Hits' ),
-        ( Model(TestModelGun, TestModelArmour) * SustainedHits_1 , 0.1111, 'Sustained Hits 1' ),
-        ( Model(TestModelGun, TestModelArmour) * SustainedHits_1 * CriticalHit_5up, 0.1389, 'Sustained Hits 1, CritHit 5+' ),
-        ( Model(TestModelGun, TestModelArmour) * RerollHits , 0.125, 'Reroll Hits' ),
-        ( Model(TestModelGun, TestModelArmour) * RerollHitsOne , 0.0972, 'Reroll Hit Rolls of 1' ),
-        ( Model(TestModelGun, TestModelArmour) * RerollWounds , 0.1389, 'Reroll Wounds' ),
-        ( Model(TestModelGun, TestModelArmour) * RerollWoundsOne , 0.0972, 'Reroll Wound Rolls of 1' ),
-        ( Model(TestModelGun, TestModelArmour) * PlusOneToWound , 0.1250, '+1 to Wound' ),
-        ( Model(TestModelGun, TestModelArmour) * PlusOneToHit , 0.1111, '+1 to Hit' ),
-        ( Model(TestModelGun, TestModelArmour) * RerollHits * RerollWounds , 0.2083, 'Full Rerolls' ),
+        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) , 0.0833, 'Nominal' ),
+        ( Model([TestModelGun, TestModelGun, TestModelGun], TestModelArmour, ATT_POS_INCHES) , 3*0.0833, 'Nominal*3' ),
+        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * Torrent , 0.1667, 'Torrent' ),
+        ( Model(TestModelVarD, TestModelArmour, ATT_POS_INCHES) , 2 * 0.0833, 'D3 Damage' ),
+        ( Model(TestModelVarD, TestModelArmour, ATT_POS_INCHES) * DevestatingWounds, 0.25, 'D3 Damage with Devestating' ),
+        ( Model(TestModelVarD, TestModelArmour, ATT_POS_INCHES) * Reroll_D3_Damage, 2.333333 * 0.0833, 'Rerolling D3 Damage'),
+        ( Model(TestModelVarA, TestModelArmour, ATT_POS_INCHES) , 2 * 0.0833, 'D3 Attacks' ),
+        ( Model(TestModelVarA, TestModelArmour, ATT_POS_INCHES) * Reroll_D3_Attacks, 2.333333 * 0.0833, 'Rerolling D3 Attacks' ),
+        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * LethalHits , 0.1389, 'Lethal Hits' ),
+        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * SustainedHits_1 , 0.1111, 'Sustained Hits 1' ),
+        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * SustainedHits_1 * CriticalHit_5up, 0.1389, 'Sustained Hits 1, CritHit 5+' ),
+        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * RerollHits , 0.125, 'Reroll Hits' ),
+        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * RerollHitsOne , 0.0972, 'Reroll Hit Rolls of 1' ),
+        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * RerollWounds , 0.1389, 'Reroll Wounds' ),
+        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * RerollWoundsOne , 0.0972, 'Reroll Wound Rolls of 1' ),
+        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * PlusOneToWound , 0.1250, '+1 to Wound' ),
+        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * PlusOneToHit , 0.1111, '+1 to Hit' ),
+        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * RerollHits * RerollWounds , 0.2083, 'Full Rerolls' ),
     ]
 
+    shooting_dis = abs(ATT_POS_INCHES - test_def.pos)
     TEST_COUNT=10000
-    print(f"Context: Attacks=Damage=1 (unless noted otherwise), Hit=0.5, Wound=0.333, Save=0.5, MonteCarlo Count={TEST_COUNT}")
+    print(f"Context: Attacks=Damage=1 (unless noted otherwise), Hit=0.5, Wound=0.333, Save=0.5, WpnRange={WPN_RANGE_INCHES}, Range={shooting_dis}, MonteCarlo Count={TEST_COUNT}")
+    for test_att, expected, details in attackers:
+        done, _ = mean_loop(attacker=test_att, defender=test_def, count=TEST_COUNT)
+        print(f"actual, expected: {done:0.4f}, {expected:0.4f}  ({details})")
+
+    test_def.pos = 400
+    shooting_dis = abs(ATT_POS_INCHES - test_def.pos)
+    TEST_COUNT=10000
+    print(f"Context: Attacks=Damage=1 (unless noted otherwise), Hit=0.5, Wound=0.333, Save=0.5, WpnRange={WPN_RANGE_INCHES}, Range={shooting_dis}, MonteCarlo Count={TEST_COUNT}")
     for test_att, expected, details in attackers:
         done, _ = mean_loop(attacker=test_att, defender=test_def, count=TEST_COUNT)
         print(f"actual, expected: {done:0.4f}, {expected:0.4f}  ({details})")
