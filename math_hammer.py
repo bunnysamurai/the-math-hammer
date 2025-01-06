@@ -500,7 +500,7 @@ class AStat():
         return result
 
     def __str__(self):
-        return f"{self.description}(A:{self.attacks} BS_WS:{self.skill} S:{self.strength} AP:{self.armourpen} D:{self.damage})"
+        return f"{self.description}(R:{self.range} A:{self.attacks} BS_WS:{self.skill} S:{self.strength} AP:{self.armourpen} D:{self.damage})"
     
 class DStat():
     def __init__(self, T, Sv, W, Inv=None, FNP=None, description="DStat"):
@@ -588,7 +588,7 @@ class DStat():
         return state.resolve()
         
 class Model():
-    def __init__(self, weapons, defence, position=0, pts="N/A", name="N/A"):
+    def __init__(self, weapons, defence, pts="N/A", name="N/A", position=0):
         self.weapons = copy.deepcopy(weapons)
         self.defence = defence
         self.name = name
@@ -655,6 +655,7 @@ class Model():
         except Exception as e:
             result += f"\n  {self.weapons}"
         result += f"\n  {self.defence}"
+        result += f"\n  @{self.pos}in"
         return result
 
 class Unit():
@@ -841,7 +842,7 @@ class AnalysisResult():
         # potential relative to point cost
         self.att_points = attacker.points
         self.def_points = defender.points
-        self.points_per_damage = self.att_points / self.very_likely_damage_output
+        self.points_per_damage = 0 if self.very_likely_damage_output == 0 else self.att_points / self.very_likely_damage_output
         
         # models-removed-per-round and rounds-taken-to-remove-model
         self.cdf_rounds_taken, self.cdf_models_removed = fold_to_models_removed_stats(damage_sequence, defender)
@@ -882,7 +883,7 @@ def run_test():
     TOUGHNESS = 5
     SAVE = 4
     WOUNDS = 6
-    DEF_POS_INCHES = 2 
+    DEF_POS_INCHES = 2
 
     TestModelArmour = DStat(T=TOUGHNESS, Sv=SAVE, W=WOUNDS)
     TestModelGun = AStat(A=ATTACKS, BS_WS=SKILL, S=STRENGTH, AP=AP, D=DAMAGE, Range=WPN_RANGE_INCHES)
