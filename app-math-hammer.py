@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import argparse
 import copy
 
-from math_hammer import perform_full_analysis
+from math_hammer import perform_full_analysis, update_position
 
 import black_templars
 import aeldari
@@ -122,15 +122,6 @@ if __name__ == "__main__":
 
     print("Working...")
 
-    def update_position(unit, position):
-        try:
-            for mdl in unit.models:
-                mdl.pos = position
-            for mdl in unit.models_untouched:
-                mdl.pos = position
-        except Exception as e:
-            unit.pos = position
-        return unit
 
     models_removed = {}
     damage_done = {}

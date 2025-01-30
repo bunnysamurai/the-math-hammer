@@ -736,6 +736,10 @@ class Unit():
         # TODO for now, we'll just use the first model in the unit
         return self.models[0]
         
+
+# =================================================================================== #
+#       Standard Modifiers
+# =================================================================================== #
 Torrent = Modifier(sequence='hit', functor=modifier_always_succeed('hit'))
 RerollWounds = Modifier(sequence='wound', functor=modifier_reroll_fails('wound'))
 RerollWoundsOne = Modifier(sequence='wound', functor=modifier_reroll_ones('wound'))
@@ -756,6 +760,42 @@ AP_PlusOne = Modifier(sequence='attacks', functor=modifier_characteristic_subtra
 AttacksPlusOne = Modifier(sequence='attacks', functor=modifier_characteristic_add_one('attacks'))
 DamagePlusOne = Modifier(sequence='attacks', functor=modifier_characteristic_add_one('damage'))
 CriticalHit_5up = Modifier(sequence='attacks', functor=modifier_characteristic_subtract_one('criticalhit'))
+
+StandardModifiers = {
+    "Torrent"           : Torrent,
+    "RerollWounds"      : RerollWounds,
+    "RerollWoundsOne"   : RerollWoundsOne,
+    "TwinLinked"        : TwinLinked,
+    "RerollHits"        : RerollHits,
+    "RerollHitsOne"     : RerollHitsOne,
+    "Reroll_D6_Damage"  : Reroll_D6_Damage,
+    "Reroll_D3_Damage"  : Reroll_D3_Damage,
+    "Reroll_D3_Attacks" : Reroll_D3_Attacks,
+    "Reroll_D6_Attacks" : Reroll_D6_Attacks,
+    "PlusOneToWound"    : PlusOneToWound,
+    "PlusOneToHit"      : PlusOneToHit,
+    "LethalHits"        : LethalHits,
+    "SustainedHits_1"   : SustainedHits_1,
+    "DevestatingWounds" : DevestatingWounds,
+    "StrengthPlusOne"   : StrengthPlusOne,
+    "AP_PlusOne"        : AP_PlusOne,
+    "AttacksPlusOne"    : AttacksPlusOne,
+    "DamagePlusOne"     : DamagePlusOne,
+    "CriticalHit_5up"   : CriticalHit_5up,
+}
+
+# =================================================================================== #
+# =================================================================================== #
+def update_position(unit, position):
+    result = copy.deepcopy(unit)
+    try:
+        for mdl in result.models:
+            mdl.pos = position
+        for mdl in result.models_untouched:
+            mdl.pos = position
+    except Exception as e:
+        result.pos = position
+    return result
 
 # =================================================================================== #
 def mean_loop(attacker, defender, count):
@@ -895,22 +935,22 @@ def run_test():
     attackers = [
         ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) , 0.0833, 'Nominal' ),
         ( Model([TestModelGun, TestModelGun, TestModelGun], TestModelArmour, ATT_POS_INCHES) , 3*0.0833, 'Nominal*3' ),
-        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * Torrent , 0.1667, 'Torrent' ),
+        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * StandardModifiers["Torrent"] , 0.1667, 'Torrent' ),
         ( Model(TestModelVarD, TestModelArmour, ATT_POS_INCHES) , 2 * 0.0833, 'D3 Damage' ),
-        ( Model(TestModelVarD, TestModelArmour, ATT_POS_INCHES) * DevestatingWounds, 0.25, 'D3 Damage with Devestating' ),
-        ( Model(TestModelVarD, TestModelArmour, ATT_POS_INCHES) * Reroll_D3_Damage, 2.333333 * 0.0833, 'Rerolling D3 Damage'),
+        ( Model(TestModelVarD, TestModelArmour, ATT_POS_INCHES) * StandardModifiers["DevestatingWounds"], 0.25, 'D3 Damage with Devestating' ),
+        ( Model(TestModelVarD, TestModelArmour, ATT_POS_INCHES) * StandardModifiers["Reroll_D3_Damage"], 2.333333 * 0.0833, 'Rerolling D3 Damage'),
         ( Model(TestModelVarA, TestModelArmour, ATT_POS_INCHES) , 2 * 0.0833, 'D3 Attacks' ),
-        ( Model(TestModelVarA, TestModelArmour, ATT_POS_INCHES) * Reroll_D3_Attacks, 2.333333 * 0.0833, 'Rerolling D3 Attacks' ),
-        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * LethalHits , 0.1389, 'Lethal Hits' ),
-        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * SustainedHits_1 , 0.1111, 'Sustained Hits 1' ),
-        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * SustainedHits_1 * CriticalHit_5up, 0.1389, 'Sustained Hits 1, CritHit 5+' ),
-        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * RerollHits , 0.125, 'Reroll Hits' ),
-        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * RerollHitsOne , 0.0972, 'Reroll Hit Rolls of 1' ),
-        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * RerollWounds , 0.1389, 'Reroll Wounds' ),
-        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * RerollWoundsOne , 0.0972, 'Reroll Wound Rolls of 1' ),
-        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * PlusOneToWound , 0.1250, '+1 to Wound' ),
-        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * PlusOneToHit , 0.1111, '+1 to Hit' ),
-        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * RerollHits * RerollWounds , 0.2083, 'Full Rerolls' ),
+        ( Model(TestModelVarA, TestModelArmour, ATT_POS_INCHES) * StandardModifiers["Reroll_D3_Attacks"], 2.333333 * 0.0833, 'Rerolling D3 Attacks' ),
+        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * StandardModifiers["LethalHits"] , 0.1389, 'Lethal Hits' ),
+        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * StandardModifiers["SustainedHits_1"] , 0.1111, 'Sustained Hits 1' ),
+        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * StandardModifiers["SustainedHits_1"] * StandardModifiers["CriticalHit_5up"], 0.1389, 'Sustained Hits 1, CritHit 5+' ),
+        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * StandardModifiers["RerollHits"] , 0.125, 'Reroll Hits' ),
+        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * StandardModifiers["RerollHitsOne"] , 0.0972, 'Reroll Hit Rolls of 1' ),
+        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * StandardModifiers["RerollWounds"] , 0.1389, 'Reroll Wounds' ),
+        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * StandardModifiers["RerollWoundsOne"] , 0.0972, 'Reroll Wound Rolls of 1' ),
+        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * StandardModifiers["PlusOneToWound"] , 0.1250, '+1 to Wound' ),
+        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * StandardModifiers["PlusOneToHit"] , 0.1111, '+1 to Hit' ),
+        ( Model(TestModelGun, TestModelArmour, ATT_POS_INCHES) * StandardModifiers["RerollHits"] * StandardModifiers["RerollWounds"] , 0.2083, 'Full Rerolls' ),
     ]
 
     shooting_dis = abs(ATT_POS_INCHES - test_def.pos)

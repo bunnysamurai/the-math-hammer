@@ -1,7 +1,11 @@
 #!/usr/bin/env python
 
 from math_hammer import AStat, DStat, Model, Unit, Dice
-from math_hammer import Torrent, SustainedHits_1, PlusOneToHit
+from math_hammer import StandardModifiers
+
+Torrent = StandardModifiers["Torrent"]
+SustainedHits_1 = StandardModifiers["SustainedHits_1"]
+PlusOneToHit = StandardModifiers["PlusOneToHit"]
 
 # ==================================================================================== #
 #       Imperial Guard assests

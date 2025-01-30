@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from math_hammer import perform_full_analysis, json_loads, json_dumps
+from math_hammer import perform_full_analysis, update_position#, json_loads, json_dumps
 import dill as pickle
 
 from black_templars import the_emperors_champion_sweep, sword_brethern
@@ -22,17 +22,20 @@ def run_test(attacker, defender):
     print_report(models_removed, f"{int(VERY_LIKELY*100)}% chance M models removed:")
     print_report(damage_done, f"{int(VERY_LIKELY*100)}% chance N damage done:")
 
+attacker = update_position(the_emperors_champion_sweep, 0)
+defender = update_position(sword_brethern, 2)
+
 print("===================================")
 print("  PICKLE TEST ")
 print("===================================")
 # run test:
 #   brother grammituis - champion
 print("before")
-run_test(the_emperors_champion_sweep, sword_brethern)
+run_test(attacker, defender)
 
 # serialize a list of stuff, say, the Black Templars library
-champ_bytes = pickle.dumps(the_emperors_champion_sweep)
-dread_bytes = pickle.dumps(sword_brethern)
+champ_bytes = pickle.dumps(attacker)
+dread_bytes = pickle.dumps(defender)
 # write it to disk, confirm it wrote
 # read from disk and deserialize
 # then, run test again:
@@ -54,3 +57,4 @@ run_test(pickle.loads(champ_bytes), pickle.loads(dread_bytes))
 
 # print("after")
 # run_test(json_loads(champ_json), json_loads(dread_json))
+

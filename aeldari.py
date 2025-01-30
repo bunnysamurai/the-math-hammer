@@ -1,7 +1,12 @@
 #!/usr/bin/env python
 
 from math_hammer import AStat, DStat, Model, Unit, Dice
-from math_hammer import  SustainedHits_1, DevestatingWounds, TwinLinked, LethalHits
+from math_hammer import StandardModifiers
+
+SustainedHits_1 = StandardModifiers["SustainedHits_1"]
+DevestatingWounds = StandardModifiers["DevestatingWounds"]
+TwinLinked = StandardModifiers["TwinLinked"]
+LethalHits = StandardModifiers["LethalHits"]
 
 # ==================================================================================== #
 #       Elf assests
