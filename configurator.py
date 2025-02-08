@@ -170,17 +170,14 @@ def run_tests():
 
     # and... fight!
 
-    defender = Black_Templars_Units.get_item("The Emperor's Champion (sweep)")
-    attacker = IG_Units.get_item("Infantry Squad Lukas Special")
+    attacker = Black_Templars_Units.get_item("The Emperor's Champion (sweep)")
+    defender = IG_Units.get_item("Infantry Squad Lukas Special")
 
     attacker = update_position(attacker, 0)
     defender = update_position(defender, 0)
 
     VERY_LIKELY_P_VALUE = 5/6.0
-    result = perform_full_analysis(attacker=attacker, defender=defender, count=1000, pvalue=VERY_LIKELY_P_VALUE, description="Emperor's Champion sweeping an Infantry Squad")
-
-    print("==========================\n")
-    print(f"{attacker}\n\nVERSUS\n\n{defender}\n")
+    result = perform_full_analysis(attacker=attacker, defender=defender, count=1000, pvalue=VERY_LIKELY_P_VALUE, description=f"\n{attacker}\n\nATTACKING\n\n{defender}\n")
     print(f"{result}")
 
 # ==============================================================================================================
