@@ -844,7 +844,7 @@ def fold_to_models_removed_stats(damage_seq, target):
     W = target.wounds
     # move through the sequence, sequentially, and note how many "swings" it took to equal-or-exceed the wounds of the target
     # we also want to compute about how many models are removed per swing
-    swings_taken = []
+    rounds_taken = []
     models_removed = []
     acc = 0
     count = 0
@@ -852,12 +852,14 @@ def fold_to_models_removed_stats(damage_seq, target):
         count += 1
         acc += damage_dealt
         if acc >= W:
-            swings_taken.append(count)
+            rounds_taken.append(count)
             count = 0
             acc = 0
         models_removed.append(int(damage_dealt / W))
-    # swings_taken is our sample
-    cdf_rounds, _ = stats_comp(np.asarray(swings_taken))
+    # rounds_taken is our sample
+    if len(rounds_taken) == 0:
+        raise ValueError("could not remove a model")
+    cdf_rounds, _ = stats_comp(np.asarray(rounds_taken))
     cdf_removed, _ = stats_comp(np.asarray(models_removed))
     return cdf_rounds, cdf_removed
 
@@ -885,20 +887,38 @@ class AnalysisResult():
         self.points_per_damage = 0 if self.very_likely_damage_output == 0 else self.att_points / self.very_likely_damage_output
         
         # models-removed-per-round and rounds-taken-to-remove-model
-        self.cdf_rounds_taken, self.cdf_models_removed = fold_to_models_removed_stats(damage_sequence, defender)
-        self.very_likely_number_of_rounds_taken = compute_likelihood_value(self.cdf_rounds_taken, self.pvalue)
-        self.very_likely_models_removed = compute_likelihood_value(self.cdf_models_removed, self.pvalue)
-        self.expected_models_removed = compute_likelihood_value(self.cdf_models_removed, 0.5)
+        try:
+            self.cdf_rounds_taken, self.cdf_models_removed = fold_to_models_removed_stats(damage_sequence, defender)
+            self.very_likely_number_of_rounds_taken = compute_likelihood_value(self.cdf_rounds_taken, self.pvalue)
+            self.very_likely_models_removed = compute_likelihood_value(self.cdf_models_removed, self.pvalue)
+            self.expected_models_removed = compute_likelihood_value(self.cdf_models_removed, 0.5)
+        except Exception as e:
+            self.cdf_rounds_taken = "Nan"
+            self.cdf_models_removed = "Nan"
+            self.very_likely_number_of_rounds_taken = "Nan"
+            self.very_likely_models_removed = 0
+            self.expected_models_removed = "Nan"
+
 
     def __str__(self):
         result = f"================ {self.desc}"
         result += f"\n  {self.att_points} points attacking a target of {self.def_points} points"
+        result +=  "\n  === Percentage chance to do 'X' or more damage ==="
+        result +=  "\n    Damage "
+        for x in range(0, len(self.damage_cdf)):
+            result += f"| {x: 5d} "
+        result += "|\n         % "
+        for x in self.damage_cdf:
+            result += f"| {int(x*100): 5d} "
+        result += "|"
+        result +=  "\n  === Additional Stats ==="
         result += f"\n  {int(self.pvalue*100)}% chance {int(self.very_likely_damage_output)} or more damage is dealt."
         result += f"\n    Expected value for damage is {int(self.expected_damage_output)}."
         result += f"\n    Expected value for damage wasted is {int(self.expected_damage_waste)}."
         result += f"\n  {int(self.pvalue*100)}% chance {self.very_likely_number_of_rounds_taken:0.1f} rounds taken to remove a model."
         result += f"\n  {int(self.pvalue*100)}% chance {int(self.very_likely_models_removed)} models or more are removed in a single round."
         result += f"\n  {self.points_per_damage:0.2f} PPD"
+
         return result
 
 def perform_full_analysis(attacker, defender, count, pvalue, description):
